@@ -70,12 +70,13 @@ const R = 13, SPEED = 220;
 const GUN = { rate:0.15, speed:900, dmg:12, range:700 };
 const CRAWL = 60;                    // ダウン中の這う速度
 const DOWN_HP = 100;                 // ダウン中の体力
-const DOWN_SHIELD = 100;             // ダウンシールド耐久（本来は装備依存）
+const DOWN_SHIELD = 200;             // ダウンシールド耐久（仕様：ノーマル200。レアリティで変わるのは後で）
 const DSHIELD_ARC = Math.PI/3;       // ダウンシールドの守る範囲（左右60°）
-const BLEED = [60, 40, 25, 15, 8];   // ダウン回数ごとの完全脱落までの猶予(秒)。だんだん短くなる
+const BLEED = [60, 50, 40, 30];      // ダウン回数ごとの完全脱落までの猶予(秒)（仕様で確定）
 const REVIVE_SEC = 5;                // 蘇生にかかる長押し時間
 const REVIVE_RANGE = 50;
 const REVIVE_HP = 30;                // 蘇生後のHP（シールドは0）
+const REVIVE_INV = 2000;             // 蘇生直後の無敵(ms)。無敵中は攻撃できない（仕様で確定）
 const ENGAGE_MS = 10000;             // BOTの攻撃許可が続く時間
 const BOT_SPREAD = 0.12;
 const ZOOM = 0.8;                    // 画面の拡大率（小さいほど広く見える）
@@ -462,9 +463,9 @@ function hostTick(dt){
     // 蘇生（長押し）：近くのダウンした味方
     if (inp.act) { const tgt = state.players.find(q=>q.down && !q.out && teamOf(q.slot)===teamOf(p.slot) && Math.hypot(q.x-p.x,q.y-p.y)<REVIVE_RANGE);
       if (tgt) { p.reviving = true; tgt.rvTick = now; tgt.rv += dt/REVIVE_SEC;
-        if (tgt.rv >= 1) { Object.assign(tgt, { down:false, hp:REVIVE_HP, sh:0, rv:0 }); feed(`${p.name} が ${tgt.name} を蘇生`); }
+        if (tgt.rv >= 1) { Object.assign(tgt, { down:false, hp:REVIVE_HP, sh:0, rv:0, inv:now+REVIVE_INV }); feed(`${p.name} が ${tgt.name} を蘇生`); }
         continue; } }
-    if (inp.fire && p.cd <= 0) { p.cd = GUN.rate;
+    if (inp.fire && p.cd <= 0 && !((p.inv||0) > now)) { p.cd = GUN.rate;
       if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 人間が攻撃を始めた → 同じチームのBOTも撃ってよい
       state.bullets.push({ id:bulletId++, o:p.id, tm:teamOf(p.slot), x:p.x+p.ax*(R+4), y:p.y+p.ay*(R+4), vx:p.ax*GUN.speed, vy:p.ay*GUN.speed, life:GUN.range/GUN.speed }); }
   }
@@ -482,6 +483,7 @@ function hostTick(dt){
     state.winner = t===undefined ? 'なし' : state.players.filter(p=>teamOf(p.slot)===t).map(p=>p.name).join('・'); state.phase='end'; }
 }
 function damage(p, dmg, b, now){
+  if ((p.inv||0) > now) return; // 蘇生直後の無敵
   engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 撃たれた → そのチームのBOTも撃ってよい
   p.lastHitBy = b.o; p.hitAt = now;
   if (p.down) { // ダウンシールド：向いている方向から来た弾を防ぐ
