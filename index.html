@@ -8,27 +8,29 @@
 <style>
   :root { --bg:#10131a; --panel:#1b2030; --line:#2c3450; --text:#e8ecf5; --sub:#8f9ab8; --accent:#ffb347; --ok:#5bd68a; --ng:#ff6b6b; }
   * { box-sizing:border-box; }
-  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; overflow:hidden; touch-action:none; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
   #lobby { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; }
   .card { width:100%; max-width:420px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
   h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--sub); font-size:13px; margin-bottom:16px; }
   label { display:block; font-size:13px; color:var(--sub); margin:10px 0 4px; }
-  input { width:100%; padding:10px; border-radius:8px; border:1px solid var(--line); background:#0d1018; color:var(--text); font-size:16px; }
+  input { width:100%; padding:10px; border-radius:8px; border:1px solid var(--line); background:#0d1018; color:var(--text); font-size:16px; user-select:text; -webkit-user-select:text; }
   button { width:100%; margin-top:10px; padding:12px; border:0; border-radius:8px; background:var(--accent); color:#1a1200; font-weight:700; font-size:16px; cursor:pointer; }
   button.sec { background:#2c3450; color:var(--text); }
-  button:disabled { opacity:.4; cursor:default; }
   .row { display:flex; gap:8px; } .row > * { flex:1; }
   #roomInfo { display:none; } .code { font-size:32px; letter-spacing:6px; font-weight:800; color:var(--accent); text-align:center; margin:6px 0; }
   ul { list-style:none; padding:0; margin:8px 0; } li { padding:8px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; font-size:14px; }
   .tag { font-size:12px; color:var(--sub); } #msg { color:var(--ng); font-size:13px; min-height:18px; margin-top:8px; }
+  .help { font-size:12px; color:var(--sub); margin-top:12px; line-height:1.6; }
   #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; }
   #hud { position:absolute; left:12px; top:10px; font-size:13px; background:rgba(0,0,0,.45); padding:8px 10px; border-radius:8px; pointer-events:none; }
-  #timer { position:absolute; left:50%; top:10px; transform:translateX(-50%); font-size:22px; font-weight:800; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:8px; }
+  #timer { position:absolute; left:50%; top:10px; transform:translateX(-50%); font-size:22px; font-weight:800; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:8px; pointer-events:none; }
+  #feed { position:absolute; right:12px; top:10px; font-size:13px; text-align:right; pointer-events:none; }
+  #feed div { background:rgba(0,0,0,.45); padding:3px 8px; border-radius:6px; margin-bottom:4px; }
 </style>
 </head>
 <body>
 <div id="lobby"><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階1：5人接続・同じ画面</div>
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階2：移動と射撃</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -42,147 +44,292 @@
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
   </div>
   <div id="msg"></div>
+  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで射撃／PC WASD移動・マウス照準・クリック射撃／スマホ 画面左で移動・画面右で照準＋射撃</div>
 </div></div>
 
-<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div></div>
+<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div></div>
 
 <script>
 // ===== 設定 =====
-const MAX_PLAYERS = 5;          // 試作は5人
-const MAP = 2000;               // マップの一辺
-const MATCH_SEC = 600;          // 10分
-const PREFIX = 'hbr-room-';
+const MAX_PLAYERS = 5;
+const MAP = 2000, MATCH_SEC = 600, PREFIX = 'hbr-room-';
+const R = 18;                    // プレイヤー半径
+const SPEED = 220;               // 移動速度(px/秒)
+// 試作用の仮の銃（武器の正確な数値は未決定なので、後で差し替え）
+const GUN = { rate:0.15, speed:900, dmg:12, range:700 };
+const RESPAWN_MS = 3000;         // 仮：段階3でダウン・蘇生に置き換え
+const BOT_SPREAD = 0.12;         // 仮：BOTの射撃のブレ(ラジアン)
 const COLORS = ['#ffb347','#5bc0ff','#ff6b9a','#7be07b','#c89bff'];
 const BOT_NAMES = ['アルファ','ブラボー','チャーリー','デルタ','エコー','フォックス','ゴルフ','ホテル'];
 
+// 障害物：固定シードで全員同じ配置
+const OBS = (() => { let s = 12345; const rnd = () => (s = (s*16807) % 2147483647) / 2147483647; const a = [];
+  for (let i=0;i<28;i++){ const w=60+rnd()*160, h=60+rnd()*160, x=100+rnd()*(MAP-200-w), y=100+rnd()*(MAP-200-h);
+    if (Math.hypot(x+w/2-MAP/2, y+h/2-MAP/2) < 380) continue; a.push({x,y,w,h}); } return a; })();
+
 // ===== 状態 =====
-let peer = null, isHost = false, myId = null, roomCode = '';
-let conns = {};        // ホスト：peerId -> conn
-let hostConn = null;   // 参加者：ホストへの接続
-// state はホストが正。参加者は受け取って描画するだけ
-let state = { phase:'lobby', players:[], startAt:0 };
+let peer=null, isHost=false, myId=null, roomCode='';
+let conns={}, hostConn=null;
+let state = { phase:'lobby', players:[], bullets:[], startAt:0 };
+let clockOffset = 0;
+const inputs = {};   // ホスト：peerId -> 最新入力
 const $ = id => document.getElementById(id);
 const msg = t => $('msg').textContent = t || '';
-
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function genCode(){ const c='ABCDEFGHJKLMNPQRSTUVWXYZ'; let s=''; for(let i=0;i<4;i++) s+=c[Math.random()*c.length|0]; return s; }
 function myName(){ return ($('name').value.trim() || 'プレイヤー').slice(0,10); }
+
+// ===== 当たり判定 =====
+function pushOut(p){ // 円と障害物・外枠
+  for (const o of OBS) {
+    const nx = Math.max(o.x, Math.min(p.x, o.x+o.w)), ny = Math.max(o.y, Math.min(p.y, o.y+o.h));
+    const dx = p.x-nx, dy = p.y-ny, d = Math.hypot(dx,dy);
+    if (d < R) { if (d===0) { p.y = o.y - R; } else { p.x = nx + dx/d*R; p.y = ny + dy/d*R; } }
+  }
+  p.x = Math.max(R, Math.min(MAP-R, p.x)); p.y = Math.max(R, Math.min(MAP-R, p.y));
+}
+const inObs = (x,y) => OBS.some(o => x>o.x && x<o.x+o.w && y>o.y && y<o.y+o.h);
+function freeSpot(){ for(;;){ const p={x:100+Math.random()*(MAP-200), y:100+Math.random()*(MAP-200)}; if(!OBS.some(o=>p.x>o.x-R&&p.x<o.x+o.w+R&&p.y>o.y-R&&p.y<o.y+o.h+R)) return p; } }
+function losClear(a,b){ const n = Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/20); for(let i=1;i<n;i++){ if(inObs(a.x+(b.x-a.x)*i/n, a.y+(b.y-a.y)*i/n)) return false; } return true; }
+
+// ===== 入力（自分） =====
+const keys = {}; let mouse = { x:0, y:0, down:false, used:false };
+const touch = { move:null, aim:null }; // {id, ox, oy, x, y}
+addEventListener('keydown', e => keys[e.code]=true); addEventListener('keyup', e => keys[e.code]=false);
+addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; });
+addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
+function tStart(e){ for (const t of e.changedTouches) { const side = t.clientX < innerWidth/2 ? 'move':'aim';
+  if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
+function tMove(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
+function tEnd(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier) touch[k]=null; e.preventDefault(); }
+const stickOf = t => { if(!t) return {x:0,y:0}; let x=(t.x-t.ox)/60, y=(t.y-t.oy)/60; const m=Math.hypot(x,y); if(m>1){x/=m;y/=m;} return {x,y}; };
+const dz = v => Math.abs(v) < 0.2 ? 0 : v;
+
+let lastAim = { x:1, y:0 };
+function readInput(me){
+  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false;
+  if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
+  if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
+  if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; }
+  const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g);
+  if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]), rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
+    if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; }
+    if ((gp.buttons[7]&&gp.buttons[7].value>0.3) || (gp.buttons[5]&&gp.buttons[5].pressed)) { fire=true; assist=true; } }
+  if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
+  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.25){ ax=s.x; ay=s.y; fire = Math.hypot(s.x,s.y)>0.5; assist=true; } }
+  const m = Math.hypot(mx,my); if (m>1){ mx/=m; my/=m; }
+  if (ax||ay) { const a=Math.hypot(ax,ay); lastAim={x:ax/a,y:ay/a}; }
+  let aim = lastAim;
+  if (assist && me) aim = aimAssist(me, aim);
+  return { mx, my, ax:aim.x, ay:aim.y, fire };
+}
+// エイムアシスト：照準から25°以内の一番近い敵へ照準を半分寄せる（コントローラー・タッチのみ）
+function aimAssist(me, aim){
+  let best=null, bd=1e9;
+  for (const p of state.players) { if (p.id===me.id || p.dead) continue;
+    const dx=p.x-me.x, dy=p.y-me.y, d=Math.hypot(dx,dy); if (d>GUN.range) continue;
+    const ang = Math.acos(Math.max(-1,Math.min(1,(dx*aim.x+dy*aim.y)/d))); if (ang < 0.44 && d<bd){ bd=d; best={x:dx/d,y:dy/d}; } }
+  if (!best) return aim; const x=aim.x+best.x, y=aim.y+best.y, m=Math.hypot(x,y)||1; return {x:x/m,y:y/m};
+}
+
+// ===== 自分の移動（各端末で即時に動かす） =====
+let local = null, lastT = performance.now(), sendAcc = 0;
+function localStep(dt){
+  const me = state.players.find(p=>p.id===myId); if (!me) return null;
+  if (!local || local.rs !== me.rs) local = { x:me.x, y:me.y, rs:me.rs }; // 復活時は位置を合わせる
+  const inp = readInput(local);
+  if (!me.dead) { local.x += inp.mx*SPEED*dt; local.y += inp.my*SPEED*dt; pushOut(local); }
+  local.ax = inp.ax; local.ay = inp.ay; local.fire = inp.fire && !me.dead; local.id = myId;
+  return local;
+}
 
 // ===== ホスト =====
 function startHost(){
   roomCode = genCode(); isHost = true;
   peer = new Peer(PREFIX + roomCode);
-  peer.on('open', id => {
-    myId = id;
-    state.players = [{ id, name:myName(), bot:false, slot:0 }];
-    showRoom(); broadcast();
-  });
+  peer.on('open', id => { myId = id; state.players = [{ id, name:myName(), bot:false, slot:0 }]; showRoom(); });
   peer.on('connection', c => {
     c.on('open', () => {
-      if (state.phase !== 'lobby' || state.players.filter(p=>!p.bot).length >= MAX_PLAYERS) {
-        c.send({ t:'reject', reason: state.phase!=='lobby' ? '試合中です' : '満員です' }); setTimeout(()=>c.close(),300); return;
-      }
+      if (state.phase!=='lobby' || state.players.filter(p=>!p.bot).length >= MAX_PLAYERS) {
+        c.send({ t:'reject', reason: state.phase!=='lobby' ? '試合中です' : '満員です' }); setTimeout(()=>c.close(),300); return; }
       conns[c.peer] = c;
     });
-    c.on('data', d => onHostData(c, d));
-    c.on('close', () => onLeave(c.peer));
-    c.on('error', () => onLeave(c.peer));
+    c.on('data', d => {
+      if (d.t==='hello') { const used=state.players.map(p=>p.slot); let slot=0; while(used.includes(slot)) slot++;
+        state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot }); renderList(); broadcast(); }
+      else if (d.t==='in') inputs[c.peer] = d;
+    });
+    c.on('close', () => onLeave(c.peer)); c.on('error', () => onLeave(c.peer));
   });
-  peer.on('error', e => { if (e.type==='unavailable-id') { peer.destroy(); startHost(); } else msg('接続エラー：'+e.type); });
-}
-function onHostData(c, d){
-  if (d.t === 'hello') {
-    const used = state.players.map(p=>p.slot);
-    let slot = 0; while (used.includes(slot)) slot++;
-    state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot });
-    renderList(); broadcast();
-  }
+  peer.on('error', e => { if (e.type==='unavailable-id'){ peer.destroy(); startHost(); } else msg('接続エラー：'+e.type); });
 }
 function onLeave(pid){
-  if (!conns[pid]) return; delete conns[pid];
+  if (!conns[pid]) return; delete conns[pid]; delete inputs[pid];
   const p = state.players.find(p=>p.id===pid); if (!p) return;
-  if (state.phase === 'lobby') state.players = state.players.filter(x=>x.id!==pid);
-  else { p.bot = true; p.name = p.name + '(BOT)'; } // 抜けた人はBOTに置き換え
+  if (state.phase==='lobby') state.players = state.players.filter(x=>x.id!==pid);
+  else { p.bot = true; p.name += '(BOT)'; feed(`${p.name} がBOTに交代`); } // 抜けた人はBOTに置き換え
   renderList(); broadcast();
 }
 function hostStartMatch(){
-  // 空き枠をBOTで埋める（名前は重複なし）
   const names = BOT_NAMES.slice().sort(()=>Math.random()-.5);
-  for (let s=0; s<MAX_PLAYERS; s++) {
-    if (!state.players.some(p=>p.slot===s)) state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s });
-  }
-  // 初期位置：マップ中央付近に円形配置
-  state.players.forEach(p => { const a = p.slot/MAX_PLAYERS*Math.PI*2; p.x = MAP/2 + Math.cos(a)*250; p.y = MAP/2 + Math.sin(a)*250; });
-  state.phase = 'match'; state.startAt = Date.now();
-  broadcast(); enterGame();
+  for (let s=0;s<MAX_PLAYERS;s++) if (!state.players.some(p=>p.slot===s)) state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s });
+  state.players.forEach(p => { const a=p.slot/MAX_PLAYERS*Math.PI*2; Object.assign(p, { x:MAP/2+Math.cos(a)*250, y:MAP/2+Math.sin(a)*250,
+    ax:1, ay:0, hp:100, sh:100, dead:false, rs:0, cd:0, kills:0 }); });
+  state.phase='match'; state.startAt=Date.now(); broadcast(); enterGame();
 }
+let bulletId = 0;
+function hostTick(dt){
+  const now = Date.now();
+  for (const p of state.players) {
+    if (p.dead) { if (now >= p.respawnAt) { Object.assign(p, freeSpot(), { hp:100, sh:100, dead:false }); p.rs++; } continue; }
+    let inp;
+    if (p.id === myId) inp = local;
+    else if (p.bot) inp = botThink(p, dt);
+    else inp = inputs[p.id];
+    if (!inp) continue;
+    if (p.bot) { p.x += inp.mx*SPEED*dt; p.y += inp.my*SPEED*dt; pushOut(p); }
+    else if (inp.x!==undefined) { // 参加者の位置は速度上限内なら受け入れる
+      const dx=inp.x-p.x, dy=inp.y-p.y, d=Math.hypot(dx,dy), lim=SPEED*0.5+20;
+      if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p); }
+    p.ax = inp.ax; p.ay = inp.ay;
+    p.cd -= dt;
+    if (inp.fire && p.cd <= 0) { p.cd = GUN.rate;
+      state.bullets.push({ id:bulletId++, o:p.id, x:p.x+p.ax*(R+4), y:p.y+p.ay*(R+4), vx:p.ax*GUN.speed, vy:p.ay*GUN.speed, life:GUN.range/GUN.speed }); }
+  }
+  // 弾
+  for (const b of state.bullets) {
+    b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt;
+    if (inObs(b.x,b.y) || b.x<0||b.y<0||b.x>MAP||b.y>MAP) { b.life=0; continue; }
+    for (const p of state.players) { if (p.dead || p.id===b.o) continue; // チームなし（全員ソロ扱い）
+      if (Math.hypot(p.x-b.x, p.y-b.y) < R) { b.life=0; damage(p, GUN.dmg, b.o); break; } }
+  }
+  state.bullets = state.bullets.filter(b=>b.life>0);
+}
+function damage(p, dmg, from){ // シールドが先に減る
+  const s = Math.min(p.sh, dmg); p.sh -= s; p.hp -= (dmg - s); p.lastHitBy = from; p.hitAt = Date.now();
+  if (p.hp <= 0) { p.hp=0; p.dead=true; p.respawnAt=Date.now()+RESPAWN_MS;
+    const k = state.players.find(x=>x.id===from); if (k) k.kills++; feed(`${k?k.name:'?'} → ${p.name}`); }
+}
+// BOT（仮）：うろうろ移動し、見えている敵を撃つ。BOTだけのチーム扱いなので自分の判断で攻撃
+function botThink(p, dt){
+  p.th = (p.th||0) - dt;
+  if (p.th <= 0) { p.th = 0.3; // 判断更新は一定間隔
+    let tgt=null, bd=GUN.range*0.9;
+    for (const q of state.players) { if (q===p||q.dead) continue; const d=Math.hypot(q.x-p.x,q.y-p.y); if (d<bd && losClear(p,q)){ bd=d; tgt=q; } }
+    if (p.lastHitBy && Date.now()-p.hitAt<2000) { const q=state.players.find(x=>x.id===p.lastHitBy); if (q&&!q.dead) tgt=q; }
+    p.tgt = tgt ? tgt.id : null;
+    if (!p.wp || Math.hypot(p.wp.x-p.x,p.wp.y-p.y)<40 || Math.random()<0.05) p.wp = freeSpot();
+  }
+  const tgt = state.players.find(q=>q.id===p.tgt && !q.dead);
+  let mx=p.wp.x-p.x, my=p.wp.y-p.y, m=Math.hypot(mx,my)||1; mx/=m; my/=m;
+  let ax=p.ax, ay=p.ay, fire=false;
+  if (tgt) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; mx*=0.5; my*=0.5; }
+  return { mx, my, ax, ay, fire };
+}
+let feeds = [];
+function feed(t){ feeds.push({ t, at:Date.now() }); if (isHost) state.feed = feeds.slice(-4); }
 function broadcast(){
-  const pkt = { t:'state', s:state, now:Date.now() };
+  const s = { phase:state.phase, startAt:state.startAt, feed:state.feed,
+    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), hp:p.hp, sh:p.sh, dead:p.dead, rs:p.rs, kills:p.kills })),
+    bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy)]) };
+  const pkt = { t:'state', s, now:Date.now() };
   for (const id in conns) if (conns[id].open) conns[id].send(pkt);
 }
-setInterval(() => { if (isHost) broadcast(); }, 100); // 10回/秒で同期
 
 // ===== 参加者 =====
-let clockOffset = 0; // ホスト時刻 - 自分の時刻
 function startJoin(){
   roomCode = $('codeIn').value.trim().toUpperCase();
-  if (roomCode.length !== 4) return msg('部屋コードは4文字です');
+  if (roomCode.length!==4) return msg('部屋コードは4文字です');
   peer = new Peer();
   peer.on('open', id => {
-    myId = id;
-    hostConn = peer.connect(PREFIX + roomCode, { reliable:true });
+    myId = id; hostConn = peer.connect(PREFIX+roomCode, { reliable:true });
     const to = setTimeout(()=>msg('部屋が見つかりません'), 8000);
     hostConn.on('open', () => { clearTimeout(to); hostConn.send({ t:'hello', name:myName() }); showRoom(); });
     hostConn.on('data', d => {
-      if (d.t === 'reject') { msg(d.reason); return; }
-      if (d.t === 'state') {
-        clockOffset = d.now - Date.now();
-        const wasLobby = state.phase === 'lobby'; state = d.s;
-        if (wasLobby && state.phase === 'match') enterGame(); else renderList();
+      if (d.t==='reject') { msg(d.reason); return; }
+      if (d.t==='state') {
+        clockOffset = d.now - Date.now(); const wasLobby = state.phase==='lobby';
+        const prev = {}; for (const p of state.players) prev[p.id] = p;
+        state = d.s; state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3]}));
+        for (const p of state.players) { const o=prev[p.id]; p.dx=o&&o.dx!==undefined&&o.rs===p.rs?o.dx:p.x; p.dy=o&&o.dy!==undefined&&o.rs===p.rs?o.dy:p.y; } // 表示用の補間位置
+        if (wasLobby && state.phase==='match') enterGame(); else if (state.phase==='lobby') renderList();
       }
     });
-    hostConn.on('close', () => { msg('ホストとの接続が切れました'); });
+    hostConn.on('close', () => msg('ホストとの接続が切れました'));
   });
   peer.on('error', e => msg(e.type==='peer-unavailable' ? '部屋が見つかりません' : '接続エラー：'+e.type));
 }
 
-// ===== ロビー表示 =====
+// ===== ロビー =====
 function showRoom(){ $('entry').style.display='none'; $('roomInfo').style.display='block'; $('codeOut').textContent=roomCode;
-  $('btnStart').style.display = isHost?'block':'none'; $('waitTxt').style.display = isHost?'none':'block'; msg(''); renderList(); }
+  $('btnStart').style.display=isHost?'block':'none'; $('waitTxt').style.display=isHost?'none':'block'; msg(''); renderList(); }
 function renderList(){
-  const ps = state.players.slice().sort((a,b)=>a.slot-b.slot);
-  let h = ''; for (let s=0; s<MAX_PLAYERS; s++) { const p = ps.find(p=>p.slot===s);
-    h += `<li><span style="color:${COLORS[s]}">● ${p?esc(p.name):'（空き）'}</span><span class="tag">${p?(p.bot?'BOT':(s===0?'ホスト':'参加')):(isHost?'開始時BOT':'')}${p&&p.id===myId?'・あなた':''}</span></li>`; }
+  let h=''; for (let s=0;s<MAX_PLAYERS;s++){ const p=state.players.find(p=>p.slot===s);
+    h+=`<li><span style="color:${COLORS[s]}">● ${p?esc(p.name):'（空き）'}</span><span class="tag">${p?(p.bot?'BOT':(s===0?'ホスト':'参加')):(isHost?'開始時BOT':'')}${p&&p.id===myId?'・あなた':''}</span></li>`; }
   $('plist').innerHTML = h;
 }
-const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ===== ゲーム画面 =====
-const cv = $('cv'), ctx = cv.getContext('2d');
-function resize(){ const r = devicePixelRatio||1; cv.width = innerWidth*r; cv.height = innerHeight*r; ctx.setTransform(r,0,0,r,0,0); }
+const cv=$('cv'), ctx=cv.getContext('2d');
+function resize(){ const r=devicePixelRatio||1; cv.width=innerWidth*r; cv.height=innerHeight*r; ctx.setTransform(r,0,0,r,0,0); }
 addEventListener('resize', resize);
-function enterGame(){ $('lobby').style.display='none'; $('game').style.display='block'; resize(); requestAnimationFrame(draw); }
-function draw(){
-  const W = innerWidth, H = innerHeight;
-  const me = state.players.find(p=>p.id===myId) || { x:MAP/2, y:MAP/2 };
-  const cx = me.x - W/2, cy = me.y - H/2; // カメラは自分中心
-  ctx.fillStyle = '#1a2a1e'; ctx.fillRect(0,0,W,H);
+function enterGame(){ $('lobby').style.display='none'; $('game').style.display='block'; resize();
+  cv.addEventListener('touchstart',tStart,{passive:false}); cv.addEventListener('touchmove',tMove,{passive:false});
+  cv.addEventListener('touchend',tEnd,{passive:false}); cv.addEventListener('touchcancel',tEnd,{passive:false});
+  cv.addEventListener('contextmenu', e=>e.preventDefault());
+  lastT = performance.now(); requestAnimationFrame(frame); }
+
+let netAcc = 0;
+function frame(t){
+  const dt = Math.min(0.05, (t-lastT)/1000); lastT = t;
+  const me = localStep(dt);
+  if (isHost) { hostTick(dt); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } } // 20回/秒で送信
+  else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0; // 30回/秒で入力送信
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fire:me.fire }); }
+    for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; } // 次の受信までは弾を進めて表示
+    for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
+  draw(me); requestAnimationFrame(frame);
+}
+function draw(me){
+  const W=innerWidth, H=innerHeight;
+  const cam = me || { x:MAP/2, y:MAP/2 }; const cx=cam.x-W/2, cy=cam.y-H/2;
+  ctx.fillStyle='#1a2a1e'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.translate(-cx,-cy);
-  ctx.fillStyle = '#24402b'; ctx.fillRect(0,0,MAP,MAP);
-  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
-  for (let g=0; g<=MAP; g+=100) { ctx.beginPath(); ctx.moveTo(g,0); ctx.lineTo(g,MAP); ctx.moveTo(0,g); ctx.lineTo(MAP,g); ctx.stroke(); }
-  ctx.strokeStyle = '#6b5'; ctx.lineWidth = 4; ctx.strokeRect(0,0,MAP,MAP);
+  ctx.fillStyle='#24402b'; ctx.fillRect(0,0,MAP,MAP);
+  ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.beginPath();
+  for (let g=0; g<=MAP; g+=100){ ctx.moveTo(g,0); ctx.lineTo(g,MAP); ctx.moveTo(0,g); ctx.lineTo(MAP,g); } ctx.stroke();
+  ctx.strokeStyle='#6b5'; ctx.lineWidth=4; ctx.strokeRect(0,0,MAP,MAP);
+  ctx.fillStyle='#5a5f6e'; for (const o of OBS) ctx.fillRect(o.x,o.y,o.w,o.h);
+  ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2); ctx.fill(); }
   for (const p of state.players) {
-    ctx.fillStyle = COLORS[p.slot]; ctx.beginPath(); ctx.arc(p.x,p.y,18,0,Math.PI*2); ctx.fill();
-    if (p.id===myId) { ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.stroke(); }
-    ctx.fillStyle='#fff'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.fillText(p.name, p.x, p.y-26);
+    const mine = p.id===myId;
+    const x = mine&&me ? me.x : (isHost ? p.x : p.dx), y = mine&&me ? me.y : (isHost ? p.y : p.dy);
+    const ax = mine&&me ? me.ax : p.ax, ay = mine&&me ? me.ay : p.ay;
+    ctx.globalAlpha = p.dead ? 0.25 : 1;
+    ctx.strokeStyle=COLORS[p.slot]; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+ax*(R+12), y+ay*(R+12)); ctx.stroke();
+    ctx.fillStyle=COLORS[p.slot]; ctx.beginPath(); ctx.arc(x,y,R,0,Math.PI*2); ctx.fill();
+    if (mine){ ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.stroke(); }
+    ctx.fillStyle='#fff'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.fillText(p.name, x, y-34);
+    if (!p.dead) { ctx.fillStyle='#000a'; ctx.fillRect(x-22,y-29,44,7);
+      ctx.fillStyle='#6cf'; ctx.fillRect(x-22,y-29,44*p.sh/100,3); ctx.fillStyle='#e55'; ctx.fillRect(x-22,y-26,44*p.hp/100,4); }
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
-  // タイマー（ホスト時刻基準で全員そろう）
+  // タッチスティック表示
+  for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
+    ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
+    const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
+  // 自分のHP・シールド
+  const mp = state.players.find(p=>p.id===myId);
+  if (mp) { const bx=16, by=H-50; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40);
+    ctx.fillStyle='#6cf'; ctx.fillRect(bx,by,220*mp.sh/100,12); ctx.fillStyle='#e55'; ctx.fillRect(bx,by+18,220*mp.hp/100,12);
+    ctx.fillStyle='#fff'; ctx.font='bold 11px sans-serif'; ctx.textAlign='left'; ctx.fillText(`シールド ${mp.sh}`, bx+4, by+10); ctx.fillText(`HP ${mp.hp}`, bx+4, by+28);
+    if (mp.dead) { ctx.font='bold 28px sans-serif'; ctx.textAlign='center'; ctx.fillText('やられた…（3秒後に復活・仮）', W/2, H/2-60); } }
   const left = Math.max(0, MATCH_SEC - Math.floor((Date.now()+clockOffset-state.startAt)/1000));
   $('timer').textContent = `${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
   const humans = state.players.filter(p=>!p.bot).length;
-  $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>人間 ${humans}人・BOT ${state.players.length-humans}人`;
-  requestAnimationFrame(draw);
+  $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>人間 ${humans}人・BOT ${state.players.length-humans}人${mp?`<br>キル ${mp.kills}`:''}`;
+  $('feed').innerHTML = (state.feed||[]).filter(f=>Date.now()+(isHost?0:clockOffset)-f.at<6000).map(f=>`<div>${esc(f.t)}</div>`).join('');
 }
 
 $('btnHost').onclick = () => { msg('部屋を作成中…'); startHost(); };
