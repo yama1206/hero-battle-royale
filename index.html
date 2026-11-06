@@ -36,7 +36,16 @@
   .rtab th { position:sticky; top:0; background:var(--panel); color:var(--sub); font-weight:700; padding:4px 6px; }
   .panel { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(330px,90vw); max-height:64vh; overflow:auto; touch-action:pan-y; display:none;
     background:rgba(16,19,26,.94); border:1px solid var(--line); border-radius:12px; padding:8px 10px; font-size:13px; }
-  #bagp { left:calc(12px + env(safe-area-inset-left)); top:calc(70px + env(safe-area-inset-top)); transform:none; max-height:calc(100% - 150px); }
+  #bagp { left:50%; top:50%; transform:translate(-50%,-50%); width:min(420px,94vw); max-height:calc(100% - 20px); }
+  #bagp .wrow { display:flex; gap:8px; margin:4px 0 8px; } #bagp .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  #bagp button.wc, #bagp button.sl { margin:0; padding:4px; background:#232a3c; border:2px solid #343d58; border-radius:8px; color:var(--text); font-weight:400; position:relative; }
+  #bagp button.wc { flex:1; width:0; text-align:left; font-size:12px; } #bagp .wc.cur { border-color:#ffb347; } #bagp .wc.empty { opacity:.6; }
+  #bagp .wn { font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #bagp .wi svg { width:100%; height:44px; } #bagp .wa { font-weight:700; color:#ffe28a; }
+  #bagp .pts { display:flex; gap:3px; margin-top:3px; } #bagp i.pt { width:22px; height:22px; border:1px dashed #4a5370; border-radius:4px; display:block; } #bagp i.pt svg { width:100%; height:100%; display:block; }
+  #bagp button.sl { aspect-ratio:1; width:100%; } #bagp .sl svg { width:80%; height:80%; } #bagp .sl b { position:absolute; right:4px; bottom:2px; font-size:13px; text-shadow:0 0 3px #000; }
+  #bagp button.on { outline:3px solid #fff; outline-offset:-1px; } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
+  .panel .hint { margin:6px 0 0; font-size:11px; line-height:1.5; } i.ic { width:26px; height:26px; display:block; flex:none; } i.ic svg { width:100%; height:100%; }
+  #setp .srow.on { background:rgba(255,179,71,.18); } #setp .sv { width:56px; text-align:center; }
   .panel h3 { display:flex; justify-content:space-between; align-items:center; margin:0 0 4px; font-size:15px; }
   .panel .it { display:flex; align-items:center; gap:6px; padding:5px 2px; border-bottom:1px solid #222a40; } .panel .it > span { flex:1; } .panel small { color:var(--sub); }
   .panel button { width:auto; margin:0; padding:6px 10px; font-size:13px; flex:none; }
@@ -64,10 +73,10 @@
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
   </div>
   <div id="msg"></div>
-  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで攻撃・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・LBで魔法の範囲攻撃モード／PC WASD移動・マウス照準・クリック攻撃・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復／I・Tab（ビュー）で持ち物<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
+  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで攻撃・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・LBで魔法の範囲攻撃モード／PC WASD移動・マウス照準・クリック攻撃・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復<br>持ち物：スタート・I・Tab（スマホは持ち物ボタン）／設定：スタート長押し・Esc（スマホは持ち物ボタン長押し）／マップ：セレクト・M（スマホはミニマップを押す）<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
 </div></div>
 
-<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="boxp" class="panel"></div>
+<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="setp" class="panel"></div><div id="boxp" class="panel"></div>
   <div id="result"><div class="card"><div id="resTxt"></div><button id="btnLobby" style="display:none">ロビーに戻る</button><div class="sub" id="resWait" style="margin:10px 0 0">ホストがロビーに戻すのを待っています…</div></div></div>
 </div>
 
@@ -121,7 +130,9 @@ const PARTS = {
 const PKEYS = Object.keys(PARTS);
 const RARE = ['ノーマル','レア','エピック','レジェンダリー'], RCOL = ['#e8e8e8','#4aa3ff','#c07cff','#ffc94a'];
 const LOOT_COUNT = { chest:40, hchest:6, weapon:[60,75], ammo:[100,120], med:[60,80], part:[50,65] }; // 配置数（仕様）
-const LOOT_MUL = 1;  // 仮：配置数の倍率。仕様の数は2400四方のマップ用なので、ソルティアで少なく感じたらここを上げる
+const LOOT_MUL = 1;  // 仮：配置数の倍率（地面の物資には使わない）
+const CHEST_MUL = 6;  // りょうさんの指示：チェストは仕様の6倍（通常240・高級36）
+const GROUND_LOOT = false; // りょうさんの指示：地面には物資を置かない（チェストからだけ）
 const AREA_W = { '少':1, '中':2, '多':4 };      // エリアの物資の量 → 出やすさ
 const HOT_AREAS = ['old','pier','yard'];        // 高級アイテムが出やすいエリア（仕様：3か所）。高級チェストはここに置く
 const CHEST_N = [[3,4],[4,5]], CHEST_P = [[.25,.30,.25,.20],[.20,.20,.20,.40]]; // 通常・高級：個数／武器・弾薬・回復・パーツの確率
@@ -467,46 +478,64 @@ function touchBtns(){ const b = actBtn(), me = state.players.find(p=>p.id===myId
 const ctr = { sw:0, rl:0, mm:0 }; // 押した回数（ホストは増えた分だけ処理する）
 addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
   if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
-  if (e.code==='KeyH') sendCmd({ c:'heal' }); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); } });
+  if (e.code==='KeyH') sendCmd({ c:'heal' }); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); }
+  if (e.code==='KeyM') toggleMap(); if (e.code==='Escape') { if (setOpen) closeSettings(); else if (mapOpen) toggleMap(); else if (bagOpen) toggleBag(); else openSettings(); } });
 addEventListener('keyup', e => keys[e.code]=false);
 let wheelAt = 0; addEventListener('wheel', e => { const n=performance.now(); if (n-wheelAt>250 && Math.abs(e.deltaY)>4) { wheelAt=n; ctr.sw++; } }, { passive:true });
-addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; });
+addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; mouseAt=performance.now(); });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
 function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
+    if (mapOpen) { toggleMap(); continue; }
     if ((canRevive() || curTarget) && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
-    if (tb) { if (tb.k==='heal') sendCmd({ c:'heal' }); else if (tb.k==='bag') toggleBag(); else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
+    if (tb) { if (tb.k==='heal') sendCmd({ c:'heal' }); else if (tb.k==='bag') { touch.bag = { id:t.identifier, at:performance.now() }; holdTimer = setTimeout(()=>{ if (touch.bag) { touch.bag = null; openSettings(); } }, LONG_MS); } else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
+    if (state.phase==='match' && miniHit(t.clientX, t.clientY)) { toggleMap(); continue; } // ミニマップを押すと大きなマップ
     const side = t.clientX < innerWidth/2 ? 'move':'aim';
     if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
 function tMove(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
-function tEnd(e){ for (const t of e.changedTouches) for (const k of ['move','aim','act']) if (touch[k]&&touch[k].id===t.identifier) touch[k]=null; e.preventDefault(); }
+function tEnd(e){ for (const t of e.changedTouches) { for (const k of ['move','aim','act']) if (touch[k]&&touch[k].id===t.identifier) touch[k]=null;
+    if (touch.bag && touch.bag.id===t.identifier) { touch.bag = null; clearTimeout(holdTimer); toggleBag(); } } e.preventDefault(); } // 持ち物ボタン：短く押す＝持ち物／長押し＝設定
+let holdTimer = 0; const LONG_MS = 500;
 const stickOf = t => { if(!t) return {x:0,y:0}; let x=(t.x-t.ox)/60, y=(t.y-t.oy)/60; const m=Math.hypot(x,y); if(m>1){x/=m;y/=m;} return {x,y}; };
 const dz = v => Math.abs(v) < 0.2 ? 0 : v;
 
-let lastAim = { x:1, y:0 }, gpPrev = [];
+let lastAim = { x:1, y:0 }, lastFace = { x:1, y:0 }, gpPrev = [], mouseAt = 0, gpHold = {};
 function readInput(me){
-  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act;
+  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act, aiming=false;
   if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
-  if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; }
+  if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; aiming = mouse.down || performance.now()-mouseAt < 600; }
   const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g);
   if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]), rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
     const pr = i => !!(gp.buttons[i]&&gp.buttons[i].pressed), edge = i => pr(i) && !gpPrev[i];
-    if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; }
-    if ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5)) { fire=true; assist=true; }
+    // スタート：押してすぐ離す＝持ち物／長押し＝設定。セレクト（ビュー）：大きなマップ
+    const n = performance.now();
+    if (edge(9)) gpHold.st = n;
+    if (pr(9) && gpHold.st && n-gpHold.st >= LONG_MS) { gpHold.st = 0; openSettings(); }
+    if (!pr(9) && gpPrev[9] && gpHold.st) { gpHold.st = 0; if (setOpen) closeSettings(); else toggleBag(); }
+    if (edge(8)) toggleMap();
+    const ui = setOpen || bagOpen || mapOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
+    if (ui) uiPad(edge);
+    if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; }
+    if (!setOpen && ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5))) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
-    if (pr(2) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || pr(2); else if (edge(2)) ctr.rl++;
-    if (edge(12)) sendCmd({ c:'heal' }); if (edge(8)) toggleBag(); // 十字キー上：回復／ビュー（Back）：持ち物
+    if (!ui) { if (pr(2) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || pr(2); else if (edge(2)) ctr.rl++;
+      if (edge(12)) sendCmd({ c:'heal' }); } // 十字キー上：回復
     if (edge(3)) ctr.sw++; if (edge(4)) ctr.mm++;
     gpPrev = gp.buttons.map(b=>b.pressed); }
+  if (setOpen) { mx = my = 0; fire = false; }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
-  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; ta=true; } } // スマホは単発武器も押しっぱなしで連射
+  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; ta=true; aiming=true; } } // スマホは単発武器も押しっぱなしで連射
   const m = Math.hypot(mx,my); if (m>1){ mx/=m; my/=m; }
   if (ax||ay) { const a=Math.hypot(ax,ay); lastAim={x:ax/a,y:ay/a}; }
   else if (!mouse.used && Math.hypot(mx,my)>0.2) { const a=Math.hypot(mx,my); lastAim={x:mx/a,y:my/a}; } // 照準していないときは移動方向を向く
+  // 体の向き：右スティック（照準）があればそちら。なければ移動方向。止まっているときは最後の向き
+  if (aiming && (ax||ay)) lastFace = { x:lastAim.x, y:lastAim.y };
+  else if (Math.hypot(mx,my) > 0.2) { const a=Math.hypot(mx,my); lastFace = { x:mx/a, y:my/a }; }
+  else if (fire) lastFace = { x:lastAim.x, y:lastAim.y };
   let aim = lastAim;
-  if (assist && me) aim = aimAssist(me, aim);
-  return { mx, my, ax:aim.x, ay:aim.y, fire, act, ta, idn };
+  if (assist && me && cfg.assist) aim = aimAssist(me, aim);
+  return { mx, my, ax:aim.x, ay:aim.y, fx:lastFace.x, fy:lastFace.y, fire, act, ta, idn };
 }
 // エイムアシスト：照準の近くの敵へ少しだけ寄せる。遠いほど弱い
 function aimAssist(me, aim){
@@ -529,7 +558,7 @@ function localStep(dt){
   if (canRevive()) inter.on = false; else interStep(inp.idn);
   if (boxOpen && (Math.hypot(inp.mx, inp.my) > 0.2 || inp.fire || !alive(me))) closeBox(); // 動く・攻撃するとデスボックスは閉じる
   if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
-  local.ax = inp.ax; local.ay = inp.ay; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
+  local.ax = inp.ax; local.ay = inp.ay; local.fx = inp.fx; local.fy = inp.fy; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
   local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm;
   return local;
 }
@@ -599,6 +628,8 @@ function hostTick(dt){
       if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p, ox, oy); }
     p.mvAmt = p.bot ? Math.hypot(inp.mx,inp.my) : (inp.mv||0);
     p.ax = inp.ax; p.ay = inp.ay; // ダウン中はこの向きがダウンシールドの向き
+    if (inp.fx !== undefined) { p.fx = inp.fx; p.fy = inp.fy; } // 体の向き（人間）
+    else { const mv = Math.hypot(inp.mx||0, inp.my||0); if (inp.fire || mv < 0.2) { p.fx = p.ax; p.fy = p.ay; } else { p.fx = inp.mx/mv; p.fy = inp.my/mv; } } // BOT：撃っていなければ移動方向
     p.cd -= dt; p.reviving = false;
     // 安全地帯の外：1秒ごとにダメージ（入ればすぐ止まる）
     if (outOfZone(zn, p.x, p.y)) { p.zAcc = (p.zAcc||0) + dt; while (p.zAcc >= 1 && !p.out) { p.zAcc -= 1; zoneHit(p, zn.dmg, now); } if (p.out) continue; }
@@ -702,6 +733,7 @@ function weaponStep(p, inp, dt, now){
   p.bl = Math.min(w.maxB, p.bl + w.bloom*(1-ptv(p,sl,'muz'))); p.cd = 1/w.rate; p.lastAtk = now; p.lastShot = now; p.wu[wid] = (p.wu[wid]||0)+1; // マズルで反動が減る
   state.bullets.push({ id:bulletId++, o:p.id, tm:teamOf(p.slot), w:wid, k:w.magic?1:0, d:0, max:w.max, life:1,
     x:p.x+Math.cos(ang)*(R+4), y:p.y+Math.sin(ang)*(R+4), vx:Math.cos(ang)*w.spd, vy:Math.sin(ang)*w.spd });
+  shotSnd(p.x, p.y, wid); // ホストはその場で鳴らす（参加者は新しい弾が届いたときに鳴らす）
 }
 
 // ===== 物資：配置・チェスト・持ち物・回復・デスボックス・補給物資（ホストが処理） =====
@@ -732,11 +764,11 @@ function spotIn(id){ const a = W.areas.find(a=>a.id===id); if (a) for (let i=0;i
 function spawnLoot(){
   state.loot = { v:1, items:[], chests:[], boxes:[] }; sentLootV = -1;
   const n = r => Math.round((Array.isArray(r) ? r[0]+Math.random()*(r[1]-r[0]) : r) * LOOT_MUL);
-  for (let i=0;i<n(LOOT_COUNT.chest);i++){ const s=lootSpot(); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y) }); }
-  for (let i=0;i<n(LOOT_COUNT.hchest);i++){ const s=spotIn(HOT_AREAS[i%HOT_AREAS.length]); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y), hi:1 }); }
-  for (const [k,c] of [['w','weapon'],['a','ammo'],['m','med'],['p','part']]) for (let i=0;i<n(LOOT_COUNT[c]);i++){ const s=lootSpot(); rollItem(k, PRAR.ground, s.x, s.y); }
+  for (let i=0;i<n(LOOT_COUNT.chest)*CHEST_MUL;i++){ const s=lootSpot(); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y) }); }
+  for (let i=0;i<n(LOOT_COUNT.hchest)*CHEST_MUL;i++){ const s=spotIn(HOT_AREAS[i%HOT_AREAS.length]); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y), hi:1 }); }
+  if (GROUND_LOOT) for (const [k,c] of [['w','weapon'],['a','ammo'],['m','med'],['p','part']]) for (let i=0;i<n(LOOT_COUNT[c]);i++){ const s=lootSpot(); rollItem(k, PRAR.ground, s.x, s.y); }
 }
-function openChest(ch){ ch.op = 1; lootTouch();
+function openChest(ch){ ch.op = 1; lootTouch(); pushEv({ k:'chest', x:ch.x, y:ch.y });
   if (ch.sp) { const n = 4 + (Math.random()*3|0), ks = ['w','p','p']; while (ks.length < n) ks.push(Math.random()<.5?'a':'m'); // 補給物資：武器1・パーツ2は確定
     for (const k of ks) { const s = dropSpot(ch.x, ch.y); rollItem(k, PRAR.drop, s.x, s.y); } return; }
   const h = ch.hi?1:0, [a,b] = CHEST_N[h], n = a + (Math.random()*(b-a+1)|0), cp = CHEST_P[h];
@@ -960,10 +992,10 @@ function broadcast(){
   const now = Date.now();
   const tp = state.tplace || {};
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
-    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2),
+    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
       wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
-    bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k]),
+    bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k,b.id,b.w]),
     ev: state.ev||[], casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
   if (state.loot && state.loot.v !== sentLootV && now - lootSentAt > 200) { sentLootV = state.loot.v; lootSentAt = now; s.loot = packLoot(state.loot); } // 物資は変わったときだけ送る
   const pkt = { t:'state', s, now };
@@ -985,6 +1017,7 @@ function startJoin(){
         clockOffset = d.now - Date.now(); const before = state.phase;
         const prev = {}; for (const p of state.players) prev[p.id] = p;
         const keepLoot = state.loot; state = d.s; state.loot = d.s.loot ? unpackLoot(d.s.loot) : (state.phase==='lobby' ? null : keepLoot); state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3],k:a[4]}));
+        { const seen = new Set(); for (const a of d.s.bullets) { seen.add(a[5]); if (state.phase==='match' && seenBul.size && !seenBul.has(a[5])) shotSnd(a[0], a[1], a[6]); } seenBul = seen.size ? seen : new Set([-1]); } // 新しい弾＝撃った音
         state.casts = d.s.casts.map(a=>({x:a[0],y:a[1],r:a[2],at:Date.now()+a[3]})); takeEvents(state.ev);
         if (state.map && W.id !== state.map) buildWorld(state.map);
         for (const p of state.players) { const o=prev[p.id]; const keep = o && o.dx!==undefined && o.rs===p.rs; p.dx=keep?o.dx:p.x; p.dy=keep?o.dy:p.y; }
@@ -1027,16 +1060,16 @@ cv.addEventListener('touchstart',tStart,{passive:false}); cv.addEventListener('t
 cv.addEventListener('touchend',tEnd,{passive:false}); cv.addEventListener('touchcancel',tEnd,{passive:false});
 cv.addEventListener('contextmenu', e=>e.preventDefault());
 let looping = false;
-function enterGame(){ lastEv=0; fxs.length=0; closeBox(); bagOpen=true; toggleBag(); $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
+function enterGame(){ lastEv=0; fxs.length=0; closeBox(); mapOpen=false; closeSettings(); sndPrev=null; seenBul=new Set(); bagOpen=true; toggleBag(); $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
   if (!looping) { looping=true; lastT=performance.now(); requestAnimationFrame(frame); } }
 
-let netAcc = 0;
+let netAcc = 0, seenBul = new Set();
 function frame(t){
   const dt = Math.max(0, Math.min(0.05, (t-lastT)/1000)); lastT = t; // 最初のフレームは時刻がずれてマイナスになることがある
   const me = state.phase==='lobby' ? null : localStep(dt);
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
-      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, vw:myView().w, vh:myView().h }); }
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (state.phase!=='lobby') draw(me);
@@ -1307,11 +1340,11 @@ function drawPlayer(v){
     drawHero(x, y, ax, ay, p, 0, true, false); return;
   }
   if (mine || ally) { ctx.strokeStyle = mine ? '#fff' : '#5f8'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(x, y, 15, 6, 0, 0, Math.PI*2); ctx.stroke(); }
-  drawHero(x, y, ax, ay, p, v.moving ? p._walk : 0, false, false);
+  drawHero(x, y, ax, ay, p, v.moving ? p._walk : 0, false, false, v.fx, v.fy);
 }
 // キャラ1人を描く（画像があれば画像、なければ仮の絵）
-function drawHero(x, y, ax, ay, p, walk, down, sil){
-  const dir = down ? 'front' : dirOf(ax, ay);
+function drawHero(x, y, ax, ay, p, walk, down, sil, fx, fy){
+  const dir = down ? 'front' : dirOf(fx ?? ax, fy ?? ay); // 体は向き(fx,fy)、武器は照準(ax,ay)
   const col = COLORS[p.slot], S = c => sil ? '#bfffd4' : c;
   ctx.save(); ctx.translate(x, y); ctx.scale(CHAR_SCALE, CHAR_SCALE);
   if (down) { ctx.translate(28, -6); ctx.rotate(-Math.PI/2); ctx.globalAlpha *= 0.85; } // 倒れている
@@ -1354,7 +1387,9 @@ function drawLabel(v){
 // ===== 攻撃の演出（斬撃・爆発・範囲の予告・ダメージ数値） =====
 const fxs = []; let lastEv = 0;
 function takeEvents(ev){ for (const e of ev||[]) { if (e.id <= lastEv) continue; lastEv = e.id;
+    if (e.k==='slash') sfx('slash', e.x, e.y); else if (e.k==='boom') sfx('boom', e.x, e.y); else if (e.k==='chest') { sfx('chest', e.x, e.y); continue; }
     if (e.k==='hit' && e.o!==myId) continue; // ダメージ数値は撃った人にだけ
+    if (e.k==='hit') sfx('hitm');
     fxs.push(Object.assign({}, e, { t0:performance.now(), jx:(Math.random()-.5)*24 })); } }
 function drawFx(){
   const n = performance.now();
@@ -1368,7 +1403,7 @@ function drawFx(){
       ctx.beginPath(); ctx.moveTo(f.x, f.y-BODY_H); ctx.arc(f.x, f.y-BODY_H, f.r+R, f.a-Math.PI/4, f.a+Math.PI/4); ctx.closePath(); ctx.fill(); ctx.restore(); }
     else if (f.k==='boom' && age < 0.35) { ctx.save(); ctx.globalAlpha = 1-age/0.35; ctx.fillStyle='rgba(200,130,255,.5)';
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r*(0.6+age), 0, Math.PI*2); ctx.fill(); ctx.restore(); }
-    else if (f.k==='hit') { ctx.save(); ctx.globalAlpha = Math.min(1, (0.9-age)*3); ctx.textAlign='center'; ctx.font='bold 16px sans-serif';
+    else if (f.k==='hit' && cfg.dmgNum) { ctx.save(); ctx.globalAlpha = Math.min(1, (0.9-age)*3); ctx.textAlign='center'; ctx.font='bold 16px sans-serif';
       ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.7)'; const x = f.x+f.jx, y = f.y-SPRITE_H*CHAR_SCALE-14-age*36;
       ctx.strokeText(f.d, x, y); ctx.fillStyle = f.c ? '#ffd23a' : '#fff'; ctx.fillText(f.d, x, y); ctx.restore(); } }
 }
@@ -1420,10 +1455,10 @@ function draw(me){
     if (p.out) continue;
     const mine = p.id===myId;
     const x = mine&&me ? me.x : (isHost ? p.x : p.dx), y = mine&&me ? me.y : (isHost ? p.y : p.dy);
-    const ax = mine&&me ? me.ax : p.ax, ay = mine&&me ? me.ay : p.ay;
+    const ax = mine&&me ? me.ax : p.ax, ay = mine&&me ? me.ay : p.ay, fx = mine&&me ? me.fx : (p.fx??ax), fy = mine&&me ? me.fy : (p.fy??ay);
     const moved = Math.hypot(x-(p._lx??x), y-(p._ly??y)); p._lx=x; p._ly=y;
     p._walk = (p._walk||0) + moved*0.12;
-    const v = { p, x, y, ax, ay, mine, ally: teamOf(p.slot)===myTeam, moving: moved>0.3 };
+    const v = { p, x, y, ax, ay, fx, fy, mine, ally: teamOf(p.slot)===myTeam, moving: moved>0.3 };
     vis.push(v); list.push({ k:y, v });
   }
   list.sort((a,b)=>a.k-b.k);
@@ -1449,7 +1484,7 @@ function draw(me){
   const hidden = v => { const x0=v.x-10, x1=v.x+10, y0=v.y-SPRITE_H*CHAR_SCALE, y1=v.y;
     return occ.some(o => (o.ht!==undefined && o.k ? o.y+o.h > v.y : true) && x1>o.ib[0] && x0<o.ib[0]+o.ib[2] && y1>o.ib[1] && y0<o.ib[1]+o.ib[3]); };
   for (const v of vis) { v.hid = hidden(v); if (v.hid && (v.mine || v.ally)) {
-      ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true); ctx.restore(); } }
+      ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true, v.fx, v.fy); ctx.restore(); } }
   // 弾（体の高さ）
   for (const b of state.bullets){ ctx.fillStyle = b.k===1 ? '#d9a2ff' : '#ffe28a'; ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,b.k===1?4:2.5,0,Math.PI*2); ctx.fill(); }
   drawFx();
@@ -1473,6 +1508,7 @@ function draw(me){
       ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(-8,-10); ctx.lineTo(-3,0); ctx.lineTo(-8,10); ctx.closePath(); ctx.fill(); ctx.restore(); }
   }
   if (state.zone) drawMini(zn, pos, mp, W);
+  camPos = pos; selfSounds(mp);
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
@@ -1499,8 +1535,9 @@ function draw(me){
   const nLeft = state.players.filter(p=>!p.out).length;
   $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>残り ${nLeft}人${mp?`｜キル ${mp.kills}`:''}`;
   $('feed').innerHTML = (state.feed||[]).filter(f=>Date.now()+(isHost?0:clockOffset)-f.at<6000 && (f.tm===undefined || (mp && f.tm===teamOf(mp.slot)))).map(f=>`<div>${esc(f.t)}</div>`).join('');
+  if (mapOpen && state.zone) drawBigMap(zn, pos, mp);
   renderPanels(mp);
-  if (state.phase==='end' && $('result').style.display!=='flex') { closeBox(); bagOpen=true; toggleBag(); $('result').style.display='flex'; renderResult(mp);
+  if (state.phase==='end' && $('result').style.display!=='flex') { closeBox(); mapOpen=false; closeSettings(); bagOpen=true; toggleBag(); $('result').style.display='flex'; renderResult(mp);
     $('btnLobby').style.display=isHost?'block':'none'; $('resWait').style.display=isHost?'none':'block'; }
 }
 // ===== 物資の表示・操作（自分の画面） =====
@@ -1563,7 +1600,7 @@ function drawHealBar(mp, W, H){ const hl = isHost ? (mp.heal ? Math.min(1, 1-(mp
   ctx.fillStyle = ITEMS[hc].col; ctx.fillRect(W/2-86, y+2, 172*hl, 5); ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(`回復中：${ITEMS[hc].name}`, W/2, y-2); }
 // 持ち物とデスボックスの画面（HTML）
 let boxOpen = null, bagOpen = false, panelAt = 0, lastBoxH = '', lastBagH = '';
-function toggleBag(){ bagOpen = !bagOpen && state.phase==='match'; lastBagH = ''; $('bagp').style.display = bagOpen ? 'block' : 'none'; }
+function toggleBag(){ bagOpen = !bagOpen && state.phase==='match'; lastBagH = ''; $('bagp').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) { mapOpen = false; closeSettings(); } sfx('ui'); }
 function openBox(id){ boxOpen = id; lastBoxH = ''; $('boxp').style.display = 'block'; panelAt = 0; }
 function closeBox(){ boxOpen = null; $('boxp').style.display = 'none'; }
 const cmdBtn = (label, c, cls) => `<button class="${cls||''}" data-c="${esc(JSON.stringify(c))}">${label}</button>`;
@@ -1572,21 +1609,17 @@ function renderPanels(mp){
   if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen);
     if (!b || !mp || !alive(mp) || (local && Math.hypot(b.x-local.x, b.y-local.y) > PICK_R+40)) closeBox();
     else { const h = `<h3><span>${esc(b.name)}のデスボックス</span>${cmdBtn('閉じる',{x:'box'},'sec')}</h3>` + (b.items.length
-        ? b.items.map(it=>`<div class="it"><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>');
+        ? b.items.map(it=>`<div class="it"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>');
       if (h !== lastBoxH) { lastBoxH = h; $('boxp').innerHTML = h; } } }
-  if (bagOpen && mp && mp.bag) {
-    const ws = [0,1].map(s => { const w = wAt(mp, s); if (!w) return `<div class="it"><span class="sub">武器${s+1}：なし</span></div>`;
-      const pt = (mp.pt && mp.pt[s]) || {}, ps = Object.keys(pt).map(k=>`<span style="color:${RCOL[pt[k]]}">${PARTS[k].name}</span>`).join('・');
-      return `<div class="it"><span>${s===mp.wp[4]?'▶ ':''}${w.name}<br><small>${ps || 'パーツなし'}</small></span>${cmdBtn('捨てる',{c:'dropw',s},'sec')}</div>`; }).join('');
-    const bs = mp.bag.map((b,i) => b ? `<div class="it"><span style="color:${itCol(b)}">${esc(itemText(b))}</span>${ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : ''}${i ? cmdBtn('↑',{c:'up',i},'sec') : ''}${cmdBtn('捨てる',{c:'drop',i},'sec')}</div>`
-      : `<div class="it"><span class="sub">（空き）</span></div>`).join('');
-    const h = `<h3><span>持ち物</span>${cmdBtn('閉じる',{x:'bag'},'sec')}</h3>${ws}<div class="sub" style="margin:8px 0 2px">所持品（${BAG_SLOTS}枠）</div>${bs}`;
-    if (h !== lastBagH) { lastBagH = h; $('bagp').innerHTML = h; } }
+  if (bagOpen && mp && mp.bag) { const h = invHTML(mp); if (h !== lastBagH) { lastBagH = h; $('bagp').innerHTML = h; } }
 }
 for (const id of ['boxp','bagp']) { const el = $(id);
   el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !b.dataset.c) return; const c = JSON.parse(b.dataset.c);
-    if (c.x==='box') closeBox(); else if (c.x==='bag') toggleBag(); else sendCmd(c); });
+    if (c.x==='box') closeBox(); else if (c.x==='bag') toggleBag(); else if (c.x==='sel') { invSel = c.i; lastBagH = ''; sfx('ui'); } else if (c.x==='wsw') ctr.sw++; else { sendCmd(c); sfx('ui'); } });
   for (const ev of ['mousedown','mouseup','wheel','touchstart','touchend']) el.addEventListener(ev, e => e.stopPropagation(), { passive:true }); } // パネルを押しても攻撃しない
+$('setp').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.dataset.s===undefined) return;
+  if (b.dataset.s==='x') { closeSettings(); return; } setSel = +b.dataset.s; setAdj(+b.dataset.d); renderSettings(); });
+for (const ev of ['mousedown','mouseup','wheel','touchstart','touchend']) $('setp').addEventListener(ev, e => e.stopPropagation(), { passive:true });
 // ===== ミニマップ（右上）：地形・安全地帯・自分と味方 =====
 const MINI = 120; let miniCv = null, miniId = null;
 function drawMini(zn, pos, mp, SW){
@@ -1606,6 +1639,190 @@ function drawMini(zn, pos, mp, SW){
   if (state.loot) for (const c of state.loot.chests) if (c.sp && !c.op) { ctx.fillStyle='#4aa3ff'; ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.fillRect(x0+c.x*k-3, y0+c.y*k-3, 6, 6); ctx.strokeRect(x0+c.x*k-3, y0+c.y*k-3, 6, 6); }
   if (pos) { ctx.fillStyle='#fff'; ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x0+pos.x*k, y0+pos.y*k, 3.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
   ctx.restore();
+}
+// ===== アイコン（持ち物・デスボックス）。絵はSVGで描いています =====
+const SV = (body, vb) => `<svg viewBox="${vb||'0 0 40 40'}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+const WICON = {
+  HG:  '<path d="M6 13h26v7H17l-2 11H8l2-11H6z" fill="#cfd6e4"/><rect x="30" y="14" width="5" height="3" fill="#cfd6e4"/>',
+  SMG: '<path d="M3 13h30v7H20l-1 4h-5l1-4H12l-2 10H5l2-10H3z" fill="#cfd6e4"/><rect x="18" y="20" width="4" height="10" fill="#9aa4b8"/>',
+  AR:  '<path d="M2 15h6l2-3h22v3h6v4h-6v3H20l-2 9h-5l2-9H8l-3 5H1l2-5z" fill="#cfd6e4"/><rect x="21" y="22" width="4" height="8" fill="#9aa4b8"/>',
+  SR:  '<path d="M1 18h8l3-2h27v3H22l-3 3H11l-4 6H2l3-6H1z" fill="#cfd6e4"/><rect x="14" y="11" width="12" height="4" rx="2" fill="#9aa4b8"/>',
+  '近接':'<path d="M33 4l3 3-19 19-3-3z" fill="#e8eef8"/><path d="M10 22l8 8-2 2-3-3-5 5-3-3 5-5-3-3z" fill="#b08850"/>',
+  '魔法':'<path d="M8 35L27 14l2 2L10 37z" fill="#a0784c"/><circle cx="30" cy="10" r="6" fill="#c08aff"/><circle cx="30" cy="10" r="3" fill="#fff"/>',
+};
+const PICON = {
+  muz:'<rect x="6" y="15" width="22" height="10" fill="#cfd6e4"/><rect x="28" y="12" width="6" height="16" fill="#9aa4b8"/>',
+  mgs:'<path d="M14 6h12v8l-2 20H14z" fill="#cfd6e4"/><rect x="16" y="9" width="8" height="3" fill="#e8d36a"/>',
+  mgl:'<path d="M12 6h16v8l-3 20H12z" fill="#cfd6e4"/><rect x="15" y="9" width="10" height="3" fill="#e89a4a"/>',
+  stk:'<path d="M4 14h20l12 6v8H24l-8-6H4z" fill="#cfd6e4"/>',
+  grp:'<path d="M10 8h20v8l-6 4 2 14h-8l-2-14-6-4z" fill="#cfd6e4"/>',
+  sgt:'<rect x="6" y="14" width="28" height="12" rx="6" fill="#cfd6e4"/><circle cx="30" cy="20" r="4" fill="#4aa3ff"/>',
+  amp:'<circle cx="20" cy="20" r="11" fill="none" stroke="#c08aff" stroke-width="4"/><circle cx="20" cy="20" r="4" fill="#fff"/>',
+};
+const IICON = {
+  as:'<g fill="#e8d36a"><rect x="9" y="14" width="6" height="18" rx="1"/><rect x="17" y="12" width="6" height="20" rx="1"/><rect x="25" y="14" width="6" height="18" rx="1"/></g><g fill="#b89a3a"><path d="M9 14l3-5 3 5zM17 12l3-5 3 5zM25 14l3-5 3 5z"/></g>',
+  al:'<g fill="#e89a4a"><rect x="10" y="13" width="8" height="20" rx="1"/><rect x="22" y="13" width="8" height="20" rx="1"/></g><g fill="#a8642a"><path d="M10 13l4-7 4 7zM22 13l4-7 4 7z"/></g>',
+  st:'<path d="M6 24l10-12h18L24 24z" fill="#e0e6ee"/><path d="M6 24h18v6H6z" fill="#9aa4b0"/><path d="M24 24l10-12v6L24 30z" fill="#7a8490"/>',
+  m1:'<ellipse cx="17" cy="17" rx="9" ry="8" fill="#e8806a"/><rect x="22" y="22" width="10" height="4" rx="2" transform="rotate(40 24 24)" fill="#f2eee6"/>',
+  m2:'<ellipse cx="17" cy="17" rx="13" ry="11" fill="#c8432c"/><ellipse cx="14" cy="14" rx="5" ry="4" fill="#e8806a"/><rect x="24" y="24" width="12" height="5" rx="2.5" transform="rotate(40 26 26)" fill="#f2eee6"/>',
+  s1:'<path d="M20 8l9 5v10c0 6-9 10-9 10s-9-4-9-10V13z" fill="#7cd0ff"/>',
+  s2:'<path d="M20 4l13 6v12c0 9-13 14-13 14S7 31 7 22V10z" fill="#2f8fe0"/><path d="M20 10l7 3v8c0 5-7 8-7 8z" fill="#7cd0ff"/>',
+};
+function icon(it){ if (!it) return '';
+  if (it.c==='w') { const w = WEAPONS[WIDS[it.w]]; return SV(WICON[w.cat]||WICON.HG); }
+  if (it.c==='p') return SV(PICON[it.pk]);
+  return SV(IICON[it.c]||''); }
+const RBG = ['#3a3f4c','#1d4370','#4a2a70','#6a5016']; // レアリティの背景
+
+// ===== 持ち物（アイコンで一目で見える）。0・1＝武器、2〜9＝所持品 =====
+let invSel = 2;
+function invHTML(mp){
+  const sel = i => `data-c='${JSON.stringify({x:'sel',i})}'`;
+  const wcard = s => { const w = wAt(mp, s), cur = s===mp.wp[4], on = invSel===s ? ' on' : '';
+    if (!w) return `<button class="wc empty${on}" ${sel(s)}><div class="wn">武器${s+1}</div><div class="sub">なし</div></button>`;
+    const pt = (mp.pt && mp.pt[s]) || {}, mag = mp.wp[s*2+1];
+    const parts = PKEYS.filter(k=>PARTS[k].fit(w)).map(k => pt[k]===undefined ? `<i class="pt"></i>` : `<i class="pt" style="background:${RBG[pt[k]]};border-color:${RCOL[pt[k]]}">${SV(PICON[k])}</i>`).join('');
+    const info = w.ammo ? `${mag}/${magCap(mp, s)}<small> 予備${bagN(mp, ammoCode(w))}</small>` : w.melee ? `<small>砥石 ${bagN(mp,'st')}</small>` : `<small>MP ${Math.round(mp.mp||0)}</small>`;
+    return `<button class="wc${cur?' cur':''}${on}" ${sel(s)}><div class="wn">${cur?'▶ ':''}${w.name}</div><div class="wi">${SV(WICON[w.cat])}</div><div class="wa">${info}</div><div class="pts">${parts}</div></button>`; };
+  const slots = mp.bag.map((b,i) => { const on = invSel===i+2 ? ' on' : '';
+    if (!b) return `<button class="sl${on}" ${sel(i+2)}></button>`;
+    const st = b.c==='p' ? `background:${RBG[b.r]};border-color:${RCOL[b.r]}` : '';
+    return `<button class="sl${on}" style="${st}" ${sel(i+2)}>${icon(b)}${b.n>1?`<b>${b.n}</b>`:''}</button>`; }).join('');
+  // 選んでいる物の説明と操作
+  let det = '';
+  if (invSel < 2) { const w = wAt(mp, invSel);
+    det = w ? `<span>${w.name}${invSel===mp.wp[4]?'（使用中）':''}</span>${invSel!==mp.wp[4]?cmdBtn('持ち替え',{x:'wsw'}):''}${cmdBtn('捨てる',{c:'dropw',s:invSel},'sec')}` : `<span class="sub">武器${invSel+1}は空いています</span>`; }
+  else { const i = invSel-2, b = mp.bag[i];
+    det = b ? `<span style="color:${itCol(b)}">${esc(itemText(b))}${b.c==='p'?`<br><small>${partDesc(b.pk)}</small>`:ITEMS[b.c]&&ITEMS[b.c].time?`<br><small>${ITEMS[b.c].hp?'HP':'シールド'}+${ITEMS[b.c].hp||ITEMS[b.c].sh}・${ITEMS[b.c].time}秒</small>`:''}</span>`
+        + (ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : '') + (i ? cmdBtn('◀',{c:'up',i},'sec') : '') + cmdBtn('捨てる',{c:'drop',i},'sec')
+      : `<span class="sub">空き</span>`; }
+  const pad = navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? '<div class="sub hint">十字キー：選ぶ　A：使う／持ち替え　X：捨てる　B：閉じる</div>' : '';
+  return `<h3><span>持ち物</span>${cmdBtn('閉じる',{x:'bag'},'sec')}</h3><div class="wrow">${wcard(0)}${wcard(1)}</div><div class="grid">${slots}</div><div class="det">${det}</div>${pad}`;
+}
+const partDesc = k => ({ muz:'反動を減らす', mgs:'装弾数アップ（小口径）', mgl:'装弾数アップ（大口径）', stk:'ぶれが早く戻る', grp:'持ち替えが速い（剣は硬直短縮）', sgt:'基本のぶれを減らす', amp:'MP消費を減らす' })[k] || '';
+// ゲームパッドで画面を操作する（十字キー・A・B・X）
+function uiPad(edge){
+  const U = edge(12), D = edge(13), Lf = edge(14), Rt = edge(15), A = edge(0), B = edge(1), X = edge(2);
+  if (setOpen) { if (U) setSel = (setSel+SETS.length-1)%SETS.length; if (D) setSel = (setSel+1)%SETS.length;
+    if (Lf) setAdj(-1); if (Rt || A) setAdj(1); if (B) closeSettings(); if (U||D||Lf||Rt||A) { renderSettings(); sfx('ui'); } return; }
+  if (mapOpen) { if (B) toggleMap(); return; }
+  if (!bagOpen) return; const mp = state.players.find(p=>p.id===myId); if (!mp || !mp.bag) return;
+  const old = invSel;
+  if (invSel < 2) { if (Lf||Rt) invSel ^= 1; if (D) invSel = invSel ? 4 : 2; }
+  else { const i = invSel-2, c = i%4, r = i/4|0;
+    if (Lf && c > 0) invSel--; if (Rt && c < 3) invSel++;
+    if (U) invSel = r ? invSel-4 : (c < 2 ? 0 : 1); if (D && r < 1) invSel += 4; }
+  if (A) { if (invSel < 2) { if (invSel !== mp.wp[4] && wAt(mp, invSel)) ctr.sw++; } else { const b = mp.bag[invSel-2]; if (b && ITEMS[b.c] && ITEMS[b.c].time) sendCmd({ c:'use', i:invSel-2 }); } }
+  if (X) { if (invSel < 2) sendCmd({ c:'dropw', s:invSel }); else if (mp.bag[invSel-2]) sendCmd({ c:'drop', i:invSel-2 }); }
+  if (B) toggleBag();
+  if (invSel !== old || A || X) { lastBagH = ''; panelAt = 0; sfx('ui'); }
+}
+
+// ===== 設定（スタート長押し・Esc・持ち物ボタン長押し） =====
+const cfg = { vol:70, assist:1, dmgNum:1 };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){}
+const saveCfg = () => { try { localStorage.setItem('hbr_cfg', JSON.stringify(cfg)); } catch(e){} };
+const SETS = [
+  { k:'vol', name:'効果音の音量', show:()=>cfg.vol+'%', adj:d=>{ cfg.vol = Math.max(0, Math.min(100, cfg.vol+d*10)); } },
+  { k:'assist', name:'エイムアシスト', show:()=>cfg.assist?'オン':'オフ', adj:()=>{ cfg.assist ^= 1; } },
+  { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
+];
+let setOpen = false, setSel = 0;
+function setAdj(d){ SETS[setSel].adj(d); saveCfg(); if (SETS[setSel].k==='vol') sfx('hitm'); }
+function openSettings(){ if (state.phase!=='match') return; setOpen = true; mapOpen = false; if (bagOpen) toggleBag(); $('setp').style.display='block'; renderSettings(); sfx('ui'); }
+function closeSettings(){ if (!setOpen) return; setOpen = false; $('setp').style.display='none'; }
+function renderSettings(){
+  $('setp').innerHTML = `<h3><span>設定</span><button class="sec" data-s="x">閉じる</button></h3>` + SETS.map((o,i)=>`<div class="it srow${i===setSel?' on':''}"><span>${o.name}</span>`
+    + `<button class="sec" data-s="${i}" data-d="-1">◀</button><b class="sv">${o.show()}</b><button class="sec" data-s="${i}" data-d="1">▶</button></div>`).join('')
+    + `<div class="sub hint">ゲームパッド：十字キー上下で選ぶ・左右で変える／B：閉じる<br>スタート：持ち物（長押しで設定）／セレクト：マップ<br>キーボード：Tab 持ち物／M マップ／Esc 設定</div>`; }
+
+// ===== 大きなマップ（セレクト・M・ミニマップを押す） =====
+let mapOpen = false, bigCv = null, bigId = null; const BIG = 360;
+function toggleMap(){ mapOpen = !mapOpen && state.phase==='match'; if (mapOpen) { closeSettings(); if (bagOpen) toggleBag(); } sfx('ui'); }
+function miniHit(x, y){ const x0 = innerWidth - MINI - 12 - SAFE.r, y0 = 10 + SAFE.t; return x > x0-6 && x < x0+MINI+6 && y > y0-6 && y < y0+MINI+6; }
+function drawBigMap(zn, pos, mp){
+  if (!bigCv || bigId !== W.id) { bigId = W.id; bigCv = document.createElement('canvas'); bigCv.width = bigCv.height = BIG;
+    const g = bigCv.getContext('2d'), st = MAP/BIG;
+    for (let j=0;j<BIG;j++) for (let i=0;i<BIG;i++) { const t = groundAt((i+.5)*st, (j+.5)*st); g.fillStyle = rgb(t==='sea' ? GC.seaD : GC[t] || GC.grass, 0); g.fillRect(i,j,1,1); }
+    g.fillStyle='rgba(60,50,40,.6)'; for (const o of W.obs) if (o.k==='bld'||o.k==='wh') g.fillRect(o.x/st, o.y/st, Math.max(1,o.w/st), Math.max(1,o.h/st)); }
+  const Wd = innerWidth, Hd = innerHeight, S = Math.min(Wd-24-SAFE.l-SAFE.r, Hd-60-SAFE.t-SAFE.b), x0 = (Wd-S)/2, y0 = Math.max(10+SAFE.t, (Hd-S)/2-10), k = S/MAP;
+  ctx.save(); ctx.fillStyle='rgba(0,0,0,.7)'; ctx.fillRect(0,0,Wd,Hd);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(bigCv, x0, y0, S, S);
+  ctx.beginPath(); ctx.rect(x0, y0, S, S); ctx.clip();
+  ctx.textAlign='center'; ctx.font=`bold ${Math.max(10, S/45|0)}px sans-serif`;
+  for (const a of W.areas) { const cx = x0+(a.r[0]+a.r[2]/2)*k, cy = y0+(a.r[1]+a.r[3]/2)*k; ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.strokeText(a.name, cx, cy); ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillText(a.name, cx, cy); }
+  if (zn) { ctx.beginPath(); ctx.rect(x0, y0, S, S); if (!zn.gone) ctx.arc(x0+zn.x*k, y0+zn.y*k, zn.r*k, 0, Math.PI*2, true); ctx.fillStyle='rgba(60,110,255,.3)'; ctx.fill();
+    if (!zn.gone) { ctx.strokeStyle='#8fb8ff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x0+zn.x*k, y0+zn.y*k, zn.r*k, 0, Math.PI*2); ctx.stroke(); }
+    if (zn.next) { ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.arc(x0+zn.next.x*k, y0+zn.next.y*k, zn.next.r*k, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } }
+  if (state.loot) for (const c of state.loot.chests) if (c.sp && !c.op) { ctx.fillStyle='#4aa3ff'; ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.fillRect(x0+c.x*k-5, y0+c.y*k-5, 10, 10); ctx.strokeRect(x0+c.x*k-5, y0+c.y*k-5, 10, 10); }
+  if (mp) for (const p of state.players) { if (p.out || p.id===myId || teamOf(p.slot)!==teamOf(mp.slot)) continue;
+    ctx.fillStyle='#5f8'; ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x0+(isHost?p.x:p.dx)*k, y0+(isHost?p.y:p.dy)*k, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
+  if (pos) { const px = x0+pos.x*k, py = y0+pos.y*k, a = Math.atan2(pos.fy??0, pos.fx??1);
+    ctx.save(); ctx.translate(px, py); ctx.rotate(a); ctx.fillStyle='#fff'; ctx.strokeStyle='#000'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(10,0); ctx.lineTo(-7,-7); ctx.lineTo(-3,0); ctx.lineTo(-7,7); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
+  ctx.restore();
+  ctx.fillStyle='#fff'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('白い点線＝次の安全地帯　青い四角＝補給物資　緑＝味方　（セレクト／M／タップで閉じる）', Wd/2, Math.min(Hd-12-SAFE.b, y0+S+20));
+}
+
+// ===== 効果音（ファイルなし。その場で音を作っています） =====
+let AC = null, NZ = null;
+function audioOn(){ try { if (!AC) { AC = new (window.AudioContext||window.webkitAudioContext)();
+    NZ = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const d = NZ.getChannelData(0); for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1; }
+  if (AC.state==='suspended') AC.resume(); } catch(e){} }
+for (const ev of ['pointerdown','keydown','touchstart']) addEventListener(ev, audioOn, { passive:true });
+// 音の部品：ノイズ（銃声・足音）と音程のある音
+function nz(t0, dur, vol, f, q, type, out){ const s = AC.createBufferSource(); s.buffer = NZ; s.loop = true; const fl = AC.createBiquadFilter(); fl.type = type||'bandpass'; fl.frequency.value = f; fl.Q.value = q||1;
+  const g = AC.createGain(); g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0+dur); s.connect(fl); fl.connect(g); g.connect(out); s.start(t0, Math.random()*0.5); s.stop(t0+dur+0.02); }
+function tn(t0, dur, vol, f1, f2, type, out){ const o = AC.createOscillator(); o.type = type||'sine'; o.frequency.setValueAtTime(f1, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0+dur);
+  const g = AC.createGain(); g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0+dur); o.connect(g); g.connect(out); o.start(t0); o.stop(t0+dur+0.02); }
+const SND = {
+  HG:  (t,o)=>{ nz(t,.09,.9,1800,.8,'bandpass',o); tn(t,.08,.5,160,60,'triangle',o); },
+  SMG: (t,o)=>{ nz(t,.06,.6,2400,.9,'bandpass',o); tn(t,.05,.3,200,90,'triangle',o); },
+  AR:  (t,o)=>{ nz(t,.1,.9,1300,.7,'bandpass',o); tn(t,.09,.6,120,50,'triangle',o); },
+  SR:  (t,o)=>{ nz(t,.35,1,900,.5,'lowpass',o); nz(t,.06,.8,3500,1,'bandpass',o); tn(t,.3,.8,90,35,'sine',o); },
+  '魔法':(t,o)=>{ tn(t,.16,.35,500,1400,'triangle',o); tn(t,.12,.15,1000,2800,'sine',o); },
+  slash:(t,o)=>{ nz(t,.16,.5,2500,2,'highpass',o); },
+  boom:(t,o)=>{ nz(t,.5,1,400,.5,'lowpass',o); tn(t,.4,.6,120,40,'sine',o); },
+  rl1: (t,o)=>{ nz(t,.03,.5,3000,4,'bandpass',o); nz(t+.08,.04,.4,1500,3,'bandpass',o); },
+  rl2: (t,o)=>{ nz(t,.03,.6,2200,4,'bandpass',o); nz(t+.09,.05,.6,3200,4,'bandpass',o); tn(t+.09,.04,.15,900,0,'square',o); },
+  sw:  (t,o)=>{ nz(t,.03,.4,2600,5,'bandpass',o); nz(t+.07,.04,.5,1800,5,'bandpass',o); },
+  dry: (t,o)=>{ nz(t,.02,.5,4000,6,'bandpass',o); },
+  hitm:(t,o)=>{ tn(t,.05,.25,1500,1300,'sine',o); },
+  hurt:(t,o)=>{ tn(t,.12,.5,180,80,'sine',o); nz(t,.08,.3,600,1,'lowpass',o); },
+  shbrk:(t,o)=>{ tn(t,.25,.3,1800,600,'triangle',o); nz(t,.2,.4,5000,2,'highpass',o); },
+  pick:(t,o)=>{ tn(t,.08,.25,600,900,'sine',o); },
+  chest:(t,o)=>{ tn(t,.18,.3,90,140,'sawtooth',o); tn(t+.15,.3,.25,880,0,'sine',o); tn(t+.22,.3,.2,1320,0,'sine',o); },
+  heal:(t,o)=>{ nz(t,.25,.15,1200,1,'bandpass',o); },
+  healed:(t,o)=>{ tn(t,.15,.25,660,0,'sine',o); tn(t+.1,.25,.25,990,0,'sine',o); },
+  down:(t,o)=>{ tn(t,.6,.5,300,80,'triangle',o); },
+  ui:  (t,o)=>{ tn(t,.04,.12,1100,0,'sine',o); },
+};
+// 鳴らす。x,yがあれば、画面の中心から遠いほど小さく・左右に振る
+function sfx(k, x, y){ if (!AC || AC.state!=='running' || !cfg.vol || !SND[k]) return;
+  let v = cfg.vol/100*0.5, pan = 0;
+  if (x !== undefined && camPos) { const dx = x-camPos.x, dy = y-camPos.y, d = Math.hypot(dx,dy); v *= Math.max(0, 1-d/1100); if (v < 0.01) return; pan = Math.max(-1, Math.min(1, dx/600)); }
+  const g = AC.createGain(); g.gain.value = v; let out = g;
+  if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(AC.destination); } else g.connect(AC.destination);
+  SND[k](AC.currentTime, out); }
+let camPos = null, sndPrev = null;
+const shotSnd = (x, y, wid) => { const w = WEAPONS[WIDS[wid]]; if (w) sfx(w.magic ? '魔法' : w.cat, x, y); };
+// 自分の状態の変化から鳴らす（リロード・持ち替え・拾う・被弾・回復・ダウン）
+function selfSounds(mp){
+  if (!mp || !mp.wp || state.phase!=='match') { sndPrev = null; return; }
+  const healOn = isHost ? !!mp.heal : mp.hl > 0, na = isHost ? Date.now()-(mp.noAmmo||0) < 1200 : !!mp.na;
+  const cnt = (mp.bag||[]).reduce((a,b)=>a+(b?b.n:0),0) + [0,1].filter(s=>mp.wp[s*2]>=0).length*1000 + Object.values(mp.pt||{}).reduce((a,o)=>a+Object.keys(o||{}).length,0)*100;
+  const now = { rl:mp.rl>0, cur:mp.wp[4], mag:mp.wp[mp.wp[4]*2+1], w:mp.wp[mp.wp[4]*2], hp:mp.hp, sh:mp.sh, heal:healOn, na, cnt, down:!!mp.down };
+  const o = sndPrev; sndPrev = now; if (!o) return;
+  if (now.cur !== o.cur || (now.w !== o.w && now.w >= 0)) sfx('sw');
+  else if (now.rl && !o.rl) sfx('rl1');
+  else if (!now.rl && o.rl && now.mag > o.mag) sfx('rl2');
+  if (now.na && !o.na) sfx('dry');
+  if (now.cnt > o.cnt) sfx('pick');
+  if (now.down && !o.down) sfx('down');
+  else if (now.hp + now.sh < o.hp + o.sh && !now.heal) { if (o.sh > 0 && now.sh <= 0) sfx('shbrk'); else sfx('hurt'); }
+  if (now.heal && !o.heal) sfx('heal');
+  if (!now.heal && o.heal && now.hp + now.sh > o.hp + o.sh) sfx('healed');
 }
 // ===== リザルト =====
 function renderResult(mp){
