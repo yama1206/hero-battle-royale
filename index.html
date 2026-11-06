@@ -46,6 +46,7 @@
   #bagp button.on { outline:3px solid #fff; outline-offset:-1px; } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
   .panel .hint { margin:6px 0 0; font-size:11px; line-height:1.5; } i.ic { width:26px; height:26px; display:block; flex:none; } i.ic svg { width:100%; height:100%; }
   #setp .srow.on { background:rgba(255,179,71,.18); } #setp .sv { width:56px; text-align:center; }
+  .padf { outline:3px solid #fff !important; outline-offset:2px; } .padedit { outline-color:#ffb347 !important; }
   .panel h3 { display:flex; justify-content:space-between; align-items:center; margin:0 0 4px; font-size:15px; }
   .panel .it { display:flex; align-items:center; gap:6px; padding:5px 2px; border-bottom:1px solid #222a40; } .panel .it > span { flex:1; } .panel small { color:var(--sub); }
   .panel button { width:auto; margin:0; padding:6px 10px; font-size:13px; flex:none; }
@@ -1838,6 +1839,47 @@ function renderResult(mp){
     <div class="rwrap"><table class="rtab"><tr><th>順位</th><th>名前</th><th>キル</th><th>ダウン</th><th>与ダメ</th><th>蘇生</th><th>生存</th><th>ヒーロー</th><th>武器</th></tr>${rows}</table></div>`;
 }
 
+// ===== メニューをコントローラーで操作（ロビー・部屋・リザルト） =====
+// 十字キー／左スティック上下：選ぶ　A：決定　左右：選択肢を変える　B：文字入力をやめる
+// 文字入力（名前・部屋コード）：Aで入力モード → 上下で文字を変える・左右で位置を移す・A/Bで終わる
+const PAD_CH = { codeIn:'ABCDEFGHJKLMNPQRSTUVWXYZ', name:' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンー' };
+const mnu = { prev:[], rep:{}, foc:null, edit:null, ci:0 };
+function menuItems(){
+  const root = $('result').style.display==='flex' ? $('result') : $('lobby').style.display!=='none' && $('game').style.display!=='block' ? $('lobby') : null;
+  if (!root) return [];
+  return [...root.querySelectorAll('button, input, select')].filter(e => e.offsetParent !== null && !e.disabled); }
+function menuFocus(el){ if (mnu.foc) mnu.foc.classList.remove('padf'); mnu.foc = el; if (el) { el.classList.add('padf'); el.scrollIntoView({ block:'nearest' }); } }
+function menuEdit(el, d, mv){ const set = PAD_CH[el.id] || PAD_CH.name, max = +el.maxLength > 0 ? +el.maxLength : 10;
+  let v = el.id==='codeIn' ? el.value.toUpperCase() : el.value; if (mv) { mnu.ci = Math.max(0, Math.min(Math.min(max-1, v.length), mnu.ci+mv)); }
+  if (d) { const c = v[mnu.ci] || (d>0 ? set[set.length-1] : set[0]); let k = set.indexOf(c); k = ((k<0?0:k)+d+set.length)%set.length;
+    v = (v.slice(0, mnu.ci).padEnd(mnu.ci, set[0]) + set[k] + v.slice(mnu.ci+1)).slice(0, max); el.value = el.id==='name' ? v.replace(/\s+$/,'') || v : v; }
+  el.setSelectionRange && el.setSelectionRange(mnu.ci, mnu.ci+1); }
+function menuPad(){
+  requestAnimationFrame(menuPad);
+  const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g); if (!gp) return;
+  const items = menuItems(); const n = performance.now();
+  const pr = i => !!(gp.buttons[i]&&gp.buttons[i].pressed);
+  const ly = gp.axes[1]||0, lx = gp.axes[0]||0;
+  const dirs = { U: pr(12) || ly < -0.6, D: pr(13) || ly > 0.6, L: pr(14) || lx < -0.6, R: pr(15) || lx > 0.6 };
+  // 押した瞬間＋押しっぱなしで連続
+  const hit = k => { const on = dirs[k]; if (!on) { mnu.rep[k] = 0; return false; } if (!mnu.rep[k]) { mnu.rep[k] = n+350; return true; } if (n >= mnu.rep[k]) { mnu.rep[k] = n+90; return true; } return false; };
+  const A = pr(0) && !mnu.prev[0], B = pr(1) && !mnu.prev[1]; mnu.prev = gp.buttons.map(b=>b.pressed);
+  const U = hit('U'), D = hit('D'), L = hit('L'), R = hit('R');
+  if (!items.length) { if (mnu.foc) menuFocus(null); mnu.edit = null; return; }
+  audioOn();
+  if (mnu.edit) { const el = mnu.edit; if (!items.includes(el) || A || B) { mnu.edit = null; el.blur(); el.classList.remove('padedit'); return; }
+    if (U) menuEdit(el, 1, 0); if (D) menuEdit(el, -1, 0); if (L) menuEdit(el, 0, -1); if (R) menuEdit(el, 0, 1); return; }
+  let i = items.indexOf(mnu.foc);
+  if (i < 0) { if (U||D||L||R||A) menuFocus(items.find(e=>e.tagName==='BUTTON') || items[0]); return; }
+  const el = items[i];
+  if (U) menuFocus(items[(i-1+items.length)%items.length]);
+  else if (D) menuFocus(items[(i+1)%items.length]);
+  else if ((L||R) && el.tagName==='SELECT') { const k = Math.max(0, Math.min(el.options.length-1, el.selectedIndex + (R?1:-1))); if (k !== el.selectedIndex) { el.selectedIndex = k; el.dispatchEvent(new Event('change')); } }
+  else if ((L||R) && items[i+(R?1:-1)] && el.parentElement === items[i+(R?1:-1)].parentElement) menuFocus(items[i+(R?1:-1)]); // 横に並んだもの
+  if (A) { if (el.tagName==='INPUT') { mnu.edit = el; mnu.ci = Math.min(el.value.length, (+el.maxLength||10)-1); el.focus(); el.classList.add('padedit'); menuEdit(el, 0, 0); }
+    else if (el.tagName==='BUTTON') el.click(); }
+}
+requestAnimationFrame(menuPad);
 $('btnHost').onclick = () => { msg('部屋を作成中…'); startHost(); };
 $('btnJoin').onclick = () => { msg('接続中…'); startJoin(); };
 $('btnStart').onclick = hostStartMatch;
