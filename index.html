@@ -37,14 +37,14 @@
   .rtab th { position:sticky; top:0; background:var(--panel); color:var(--sub); font-weight:700; padding:4px 6px; }
   .panel { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(330px,90vw); max-height:64vh; overflow:auto; touch-action:pan-y; display:none;
     background:rgba(16,19,26,.94); border:1px solid var(--line); border-radius:12px; padding:8px 10px; font-size:13px; }
-  #bagp { left:50%; top:50%; transform:translate(-50%,-50%); width:min(420px,94vw); max-height:calc(100% - 20px); }
-  #bagp .wrow { display:flex; gap:8px; margin:4px 0 8px; } #bagp .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  #bagp { left:50%; top:50%; transform:translate(-50%,-50%); width:min(300px,94vw); max-height:calc(100% - 20px); }
+  #bagp .wrow { display:flex; gap:8px; margin:4px 0 8px; } #bagp .grid { display:grid; grid-template-columns:repeat(4,52px); gap:6px; justify-content:center; }
   #bagp button.wc, #bagp button.sl { margin:0; padding:4px; background:#232a3c; border:2px solid #343d58; border-radius:8px; color:var(--text); font-weight:400; position:relative; }
   #bagp button.wc { flex:1; width:0; text-align:left; font-size:12px; } #bagp .wc.cur { border-color:#ffb347; } #bagp .wc.empty { opacity:.6; }
-  #bagp .wn { font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #bagp .wi svg { width:100%; height:44px; } #bagp .wa { font-weight:700; color:#ffe28a; }
-  #bagp .pts { display:flex; gap:3px; margin-top:3px; } #bagp i.pt { width:22px; height:22px; border:1px dashed #4a5370; border-radius:4px; display:block; } #bagp i.pt svg { width:100%; height:100%; display:block; }
-  #bagp button.sl { aspect-ratio:1; width:100%; } #bagp .sl svg { width:80%; height:80%; } #bagp .sl b { position:absolute; right:4px; bottom:2px; font-size:13px; text-shadow:0 0 3px #000; }
-  #bagp button.on { outline:3px solid #fff; outline-offset:-1px; } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
+  #bagp .wn { font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #bagp .wi svg { width:100%; height:22px; } #bagp .wa { font-weight:700; color:#ffe28a; }
+  #bagp .pts { display:flex; gap:3px; margin-top:3px; } #bagp i.pt { width:16px; height:16px; border:1px dashed #4a5370; border-radius:4px; display:block; } #bagp i.pt svg { width:100%; height:100%; display:block; }
+  #bagp button.sl { aspect-ratio:1; width:100%; } #bagp .sl svg { width:80%; height:80%; } #bagp .sl b { position:absolute; right:3px; bottom:1px; font-size:11px; text-shadow:0 0 3px #000; }
+  #bagp button.on, .panel .it.on { outline:3px solid #ffe14a; outline-offset:1px; box-shadow:0 0 10px #ffe14a; animation:cur 1s ease-in-out infinite alternate; } .panel .it.on { outline-offset:-2px; border-radius:6px; background:rgba(255,225,74,.12); } @keyframes cur { from { outline-color:#ffe14a; } to { outline-color:#fff6b8; } } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
   .panel .hint { margin:6px 0 0; font-size:11px; line-height:1.5; } i.ic { width:26px; height:26px; display:block; flex:none; } i.ic svg { width:100%; height:100%; }
   #setp .srow.on { background:rgba(255,179,71,.18); } #setp .sv { width:56px; text-align:center; }
   .padf { outline:3px solid #fff !important; outline-offset:2px; } .padedit { outline-color:#ffb347 !important; }
@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.1</div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.2</div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -516,7 +516,7 @@ function readInput(me){
     if (pr(9) && gpHold.st && n-gpHold.st >= LONG_MS) { gpHold.st = 0; openSettings(); }
     if (!pr(9) && gpPrev[9] && gpHold.st) { gpHold.st = 0; if (setOpen) closeSettings(); else toggleBag(); }
     if (edge(8)) toggleMap();
-    const ui = setOpen || bagOpen || mapOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
+    const ui = setOpen || bagOpen || mapOpen || !!boxOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
     if (ui) uiPad(edge);
     if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; }
     if (!setOpen && ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5))) { fire=true; assist=true; }
@@ -1601,9 +1601,9 @@ function drawHealBar(mp, W, H){ const hl = isHost ? (mp.heal ? Math.min(1, 1-(mp
   if (!hl || !hc) return; const y = H/2 + 96; ctx.fillStyle='#000a'; ctx.fillRect(W/2-90, y-16, 180, 26);
   ctx.fillStyle = ITEMS[hc].col; ctx.fillRect(W/2-86, y+2, 172*hl, 5); ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(`回復中：${ITEMS[hc].name}`, W/2, y-2); }
 // 持ち物とデスボックスの画面（HTML）
-let boxOpen = null, bagOpen = false, panelAt = 0, lastBoxH = '', lastBagH = '';
+let boxSel = 0, boxOpen = null, bagOpen = false, panelAt = 0, lastBoxH = '', lastBagH = '';
 function toggleBag(){ bagOpen = !bagOpen && state.phase==='match'; lastBagH = ''; $('bagp').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) { mapOpen = false; closeSettings(); } sfx('ui'); }
-function openBox(id){ boxOpen = id; lastBoxH = ''; $('boxp').style.display = 'block'; panelAt = 0; }
+function openBox(id){ boxOpen = id; boxSel = 0; lastBoxH = ''; $('boxp').style.display = 'block'; panelAt = 0; }
 function closeBox(){ boxOpen = null; $('boxp').style.display = 'none'; }
 const cmdBtn = (label, c, cls) => `<button class="${cls||''}" data-c="${esc(JSON.stringify(c))}">${label}</button>`;
 function renderPanels(mp){
@@ -1611,7 +1611,7 @@ function renderPanels(mp){
   if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen);
     if (!b || !mp || !alive(mp) || (local && Math.hypot(b.x-local.x, b.y-local.y) > PICK_R+40)) closeBox();
     else { const h = `<h3><span>${esc(b.name)}のデスボックス</span>${cmdBtn('閉じる',{x:'box'},'sec')}</h3>` + (b.items.length
-        ? b.items.map(it=>`<div class="it"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>');
+        ? b.items.map((it,k)=>`<div class="it${k===Math.min(boxSel,b.items.length-1)?' on':''}"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>') + (navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? '<div class="sub hint">十字キー上下：選ぶ　A：取る　B：閉じる</div>' : '');
       if (h !== lastBoxH) { lastBoxH = h; $('boxp').innerHTML = h; } } }
   if (bagOpen && mp && mp.bag) { const h = invHTML(mp); if (h !== lastBagH) { lastBagH = h; $('bagp').innerHTML = h; } }
 }
@@ -1708,6 +1708,11 @@ function uiPad(edge){
   if (setOpen) { if (U) setSel = (setSel+SETS.length-1)%SETS.length; if (D) setSel = (setSel+1)%SETS.length;
     if (Lf) setAdj(-1); if (Rt || A) setAdj(1); if (B) closeSettings(); if (U||D||Lf||Rt||A) { renderSettings(); sfx('ui'); } return; }
   if (mapOpen) { if (B) toggleMap(); return; }
+  if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen), n = b ? b.items.length : 0; if (B) { closeBox(); sfx('ui'); return; } if (!n) return;
+    boxSel = Math.min(boxSel, n-1); const old = boxSel;
+    if (U) boxSel = (boxSel+n-1)%n; if (D) boxSel = (boxSel+1)%n;
+    if (A) sendCmd({ c:'take', id:b.id, i:b.items[boxSel].id });
+    if (boxSel !== old || A) { lastBoxH = ''; panelAt = 0; sfx('ui'); } return; }
   if (!bagOpen) return; const mp = state.players.find(p=>p.id===myId); if (!mp || !mp.bag) return;
   const old = invSel;
   if (invSel < 2) { if (Lf||Rt) invSel ^= 1; if (D) invSel = invSel ? 4 : 2; }
