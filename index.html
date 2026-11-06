@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.7<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.8<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -808,7 +808,8 @@ function takeWeapon(p, it, remove){
   let s = p.wp[p.wp[4]*2] < 0 ? p.wp[4] : p.wp[(p.wp[4]^1)*2] < 0 ? p.wp[4]^1 : -1;
   if (s < 0) { s = p.wp[4]; dropWeapon(p, s); }
   remove(); p.wp[s*2] = it.w; p.wp[s*2+1] = it.m||0; p.pt[s] = Object.assign({}, it.pt||{});
-  if (s === p.wp[4]) { p.rl = 0; p.bl = 0; p.swt = SWITCH_SEC; } }
+  if (s === p.wp[4]) { p.rl = 0; p.bl = 0; p.swt = SWITCH_SEC; }
+  p.bag.forEach((b,i) => { if (b && b.c==='p' && tryEquip(p, b)) p.bag[i] = null; }); } // 持ち物のパーツで付けられる物は付ける
 // 歩いて触れた物を自動で拾う（弾薬・回復・砥石・付けられるパーツ。武器は空き枠があるとき）
 function autoPick(p){
   for (const it of L().items) { if (it.gone || it.own===p.id || Math.abs(it.x-p.x) > AUTO_R || Math.abs(it.y-p.y) > AUTO_R) continue;
@@ -834,6 +835,7 @@ function hostCmd(p, c){
   const near = (o, r) => o && Math.hypot(o.x-p.x, o.y-p.y) < (r||PICK_R)+20;
   if (c.c==='heal') { if (p.heal) p.heal = null; else startHeal(p, autoHeal(p)); return; } // もう一度押すと取り消し
   if (c.c==='use') { const b = p.bag[c.i]; if (b) startHeal(p, b.c); return; }
+  if (c.c==='equip') { const b = p.bag[c.i]; if (b && b.c==='p' && tryEquip(p, b)) p.bag[c.i] = null; return; }
   if (c.c==='drop') { const b = p.bag[c.i]; if (!b) return; p.bag[c.i] = null; dropItem(p, b.c, b); return; }
   if (c.c==='up') { const i = c.i|0; if (i > 0 && i < BAG_SLOTS) [p.bag[i-1], p.bag[i]] = [p.bag[i], p.bag[i-1]]; return; }
   if (c.c==='dropw') { dropWeapon(p, c.s ? 1 : 0); return; }
@@ -1699,7 +1701,7 @@ function invHTML(mp){
     det = w ? `<span>${w.name}${invSel===mp.wp[4]?'（使用中）':''}</span>${invSel!==mp.wp[4]?cmdBtn('持ち替え',{x:'wsw'}):''}${cmdBtn('捨てる',{c:'dropw',s:invSel},'sec')}` : `<span class="sub">武器${invSel+1}は空いています</span>`; }
   else { const i = invSel-2, b = mp.bag[i];
     det = b ? `<span style="color:${itCol(b)}">${esc(itemText(b))}${b.c==='p'?`<br><small>${partDesc(b.pk)}</small>`:ITEMS[b.c]&&ITEMS[b.c].time?`<br><small>${ITEMS[b.c].hp?'HP':'シールド'}+${ITEMS[b.c].hp||ITEMS[b.c].sh}・${ITEMS[b.c].time}秒</small>`:''}</span>`
-        + (ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : '') + (i ? cmdBtn('◀',{c:'up',i},'sec') : '') + cmdBtn('捨てる',{c:'drop',i},'sec')
+        + (ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : '') + (b.c==='p' && [0,1].some(s=>{ const w = wAt(mp, s); return w && PARTS[b.pk].fit(w); }) ? cmdBtn('付ける',{c:'equip',i}) : '') + (i ? cmdBtn('◀',{c:'up',i},'sec') : '') + cmdBtn('捨てる',{c:'drop',i},'sec')
       : `<span class="sub">空き</span>`; }
   const pad = navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? `<div class="sub hint">スティック：カーソル　${bn(0)}：押す　${bn(2)}：選んでいる物を捨てる　${bn(1)}：閉じる</div>` : '';
   return `<h3><span>持ち物</span>${cmdBtn('閉じる',{x:'bag'},'sec')}</h3><div class="wrow">${wcard(0)}${wcard(1)}</div><div class="grid">${slots}</div><div class="det">${det}</div>${pad}`;
