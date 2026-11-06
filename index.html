@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.2<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -484,12 +484,21 @@ function touchBtns(){ const b = actBtn(), me = state.players.find(p=>p.id===myId
            { k:'heal', x:b.x, y:b.y-146, r:28, label:'回復' },
            { k:'dg', x:b.x-88, y:b.y+112, r:28, label:'回避' },
            { k:'bag', x:b.x-152, y:b.y+44, r:28, label:'持ち物' } ].filter(x=>x.show!==false); }
+// アイテムリング：回復ボタンを長押しで出る。方向で選び、離すと使う（短く押す＝今までどおり自動で回復）
+const RING = ['s1','m1','s2','m2']; // 上・右・下・左
+const ring = { down:0, open:false, sel:-1 };
+function ringPress(){ ring.down = performance.now(); ring.open = false; ring.sel = -1; }
+function ringHold(){ if (ring.down && !ring.open && performance.now()-ring.down >= LONG_MS && state.phase==='match') { ring.open = true; sfx('ui'); } }
+function ringAim(x, y){ if (!ring.open || Math.hypot(x, y) < 0.35) return; const a = Math.atan2(y, x); // 上0・右1・下2・左3
+  const k = ((Math.round(a/(Math.PI/2)) + 5) % 4); if (k !== ring.sel) { ring.sel = k; sfx('ui'); } }
+function ringRelease(){ if (!ring.down) return; const was = ring.open, sel = ring.sel; ring.down = 0; ring.open = false; ring.sel = -1;
+  if (!was) { sendCmd({ c:'heal' }); return; } if (sel >= 0) sendCmd({ c:'heal', code:RING[sel] }); }
 let keyDodge = false; const ctr = { sw:0, rl:0, mm:0, dg:0 }; // 押した回数（ホストは増えた分だけ処理する）
 addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
   if (e.code==='Space' && state.phase==='match' && !(e.target && e.target.tagName==='INPUT')) { e.preventDefault(); keyDodge = true; } if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
-  if (e.code==='KeyH') sendCmd({ c:'heal' }); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); }
+  if (e.code==='KeyH') ringPress(); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); }
   if (e.code==='KeyM') toggleMap(); if (e.code==='Escape') { if (setOpen) closeSettings(); else if (mapOpen) toggleMap(); else if (bagOpen) toggleBag(); else openSettings(); } });
-addEventListener('keyup', e => keys[e.code]=false);
+addEventListener('keyup', e => { keys[e.code]=false; if (e.code==='KeyH') ringRelease(); });
 let wheelAt = 0; addEventListener('wheel', e => { const n=performance.now(); if (n-wheelAt>250 && Math.abs(e.deltaY)>4) { wheelAt=n; ctr.sw++; } }, { passive:true });
 addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; mouseAt=performance.now(); });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
@@ -497,12 +506,12 @@ function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
     if (mapOpen) { toggleMap(); continue; }
     if ((canRevive() || curTarget) && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
-    if (tb) { if (tb.k==='heal') sendCmd({ c:'heal' }); else if (tb.k==='dg') touch.dg = true; else if (tb.k==='bag') { touch.bag = { id:t.identifier, at:performance.now() }; holdTimer = setTimeout(()=>{ if (touch.bag) { touch.bag = null; openSettings(); } }, LONG_MS); } else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
+    if (tb) { if (tb.k==='heal') { ringPress(); touch.ring = { id:t.identifier, ox:tb.x, oy:tb.y }; } else if (tb.k==='dg') touch.dg = true; else if (tb.k==='bag') { touch.bag = { id:t.identifier, at:performance.now() }; holdTimer = setTimeout(()=>{ if (touch.bag) { touch.bag = null; openSettings(); } }, LONG_MS); } else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
     if (state.phase==='match' && miniHit(t.clientX, t.clientY)) { toggleMap(); continue; } // ミニマップを押すと大きなマップ
     const side = t.clientX < innerWidth/2 ? 'move':'aim';
     if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
-function tMove(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
-function tEnd(e){ for (const t of e.changedTouches) { for (const k of ['move','aim','act']) if (touch[k]&&touch[k].id===t.identifier) touch[k]=null;
+function tMove(e){ for (const t of e.changedTouches) { if (touch.ring && touch.ring.id===t.identifier) ringAim((t.clientX-touch.ring.ox)/60, (t.clientY-touch.ring.oy)/60); } for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
+function tEnd(e){ for (const t of e.changedTouches) { if (touch.ring && touch.ring.id===t.identifier) { touch.ring = null; ringRelease(); } for (const k of ['move','aim','act']) if (touch[k]&&touch[k].id===t.identifier) touch[k]=null;
     if (touch.bag && touch.bag.id===t.identifier) { touch.bag = null; clearTimeout(holdTimer); toggleBag(); } } e.preventDefault(); } // 持ち物ボタン：短く押す＝持ち物／長押し＝設定
 let holdTimer = 0; const LONG_MS = 500;
 const stickOf = t => { if(!t) return {x:0,y:0}; let x=(t.x-t.ox)/60, y=(t.y-t.oy)/60; const m=Math.hypot(x,y); if(m>1){x/=m;y/=m;} return {x,y}; };
@@ -515,7 +524,7 @@ function readInput(me){
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
   if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; aiming = mouse.down || performance.now()-mouseAt < 600; }
   const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g);
-  if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]), rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
+  if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]); let rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
     const pr = i => !!(gp.buttons[i]&&gp.buttons[i].pressed), edge = i => pr(i) && !gpPrev[i];
     // スタート：押してすぐ離す＝持ち物／長押し＝設定。セレクト（ビュー）：大きなマップ
     const n = performance.now();
@@ -527,17 +536,19 @@ function readInput(me){
     if (be(K.map)) toggleMap();
     const ui = setOpen || bagOpen || mapOpen || !!boxOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
     if (ui) uiPad(edge);
+    ringHold(); if (ring.open) { ringAim(rx||lx, ry||ly); rx = ry = 0; }
     ptrUpdate(ui && !mapOpen ? lx : 0, ui && !mapOpen ? ly : 0, ui && !mapOpen ? ry : 0);
     if (ptr.on) { /* カーソル操作中はスティックで動かない */ } else { if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; } }
     if (!setOpen && !ptr.on && (bp(K.fire) || bp(K.fire2))) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
     if (!ui) { if (bp(K.act) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || bp(K.act); else if (be(K.act)) ctr.rl++;
-      if (be(K.heal)) sendCmd({ c:'heal' });
+      if (be(K.heal)) ringPress(); if (!bp(K.heal) && gpPrev[K.heal] && ring.down) ringRelease();
       if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; if (be(K.dodge)) dodge = true; if (bp(K.dash)) dash = true; }
     gpPrev = gp.buttons.map(b=>b.pressed); }
   if (setOpen) { mx = my = 0; fire = false; }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; if (Math.hypot(touch.move.x-touch.move.ox, touch.move.y-touch.move.oy) > 95) dash = true; } // スマホ：スティックを大きく倒すとダッシュ
   if (touch.dg) { dodge = true; touch.dg = false; }
+  ringHold(); if (ring.open && keys.KeyH && mouse.used) ringAim((mouse.x-innerWidth/2)/80, (mouse.y-innerHeight/2)/80); if (ring.open) fire = false;
   if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; ta=true; aiming=true; } } // スマホは単発武器も押しっぱなしで連射
   const m = Math.hypot(mx,my); if (m>1){ mx/=m; my/=m; }
   if (ax||ay) { const a=Math.hypot(ax,ay); lastAim={x:ax/a,y:ay/a}; }
@@ -855,6 +866,7 @@ function makeBox(p){ if (!L() || !p.wp) return; const items = [], add = o => ite
 function hostCmd(p, c){
   if (!p || p.out || state.phase!=='match' || !L() || !c) return; const l = L();
   const near = (o, r) => o && Math.hypot(o.x-p.x, o.y-p.y) < (r||PICK_R)+20;
+  if (c.c==='heal' && c.code) { if (!ITEMS[c.code] || !ITEMS[c.code].time) return; p.heal = null; startHeal(p, c.code); return; } // アイテムリングで選んだ物
   if (c.c==='heal') { if (p.heal) p.heal = null; else startHeal(p, autoHeal(p)); return; } // もう一度押すと取り消し
   if (c.c==='use') { const b = p.bag[c.i]; if (b) startHeal(p, b.c); return; }
   if (c.c==='equip') { const b = p.bag[c.i]; if (b && b.c==='p' && tryEquip(p, b)) p.bag[c.i] = null; return; }
@@ -1551,6 +1563,7 @@ function draw(me){
     ctx.fillText(rvOK ? '蘇生' : curTarget ? ACT_LABEL[curTarget.k] : '', b.x, b.y+5); holdRing(b.x, b.y, b.r+4); }
   if (mp && alive(mp) && curTarget && !rvOK && !boxOpen) drawPrompt(mp, W, H, coarse);
   if (mp && alive(mp)) drawHealBar(mp, W, H);
+  if (ring.open && mp && mp.bag) drawRing(mp, W, H);
   if (matchMedia('(pointer:coarse)').matches && state.phase==='match' && mp && alive(mp)) for (const b of touchBtns()) {
     const lit = touch.flash && touch.flash.k===b.k && performance.now()-touch.flash.at < 150;
     ctx.fillStyle = lit ? 'rgba(255,226,138,.5)' : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
@@ -1628,6 +1641,14 @@ function drawPrompt(mp, W, H, coarse){ const tg = curTarget, o = tg.o;
   ctx.save(); ctx.textAlign='center'; ctx.font='bold 15px sans-serif'; const tw = ctx.measureText(s).width;
   ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(W/2-tw/2-10, y-18, tw+20, 26); ctx.fillStyle = tg.k==='p' ? RCOL[o.r] : '#fff'; ctx.fillText(s, W/2, y);
   holdRing(W/2-tw/2-22, y-5, 9); ctx.restore(); }
+function drawRing(mp, W, H){ const cx = W/2, cy = H/2, rr = Math.min(110, Math.min(W, H)*0.22);
+  ctx.save(); ctx.fillStyle='rgba(0,0,0,.45)'; ctx.beginPath(); ctx.arc(cx, cy, rr+48, 0, Math.PI*2); ctx.fill();
+  RING.forEach((c, k) => { const a = -Math.PI/2 + k*Math.PI/2, x = cx + Math.cos(a)*rr, y = cy + Math.sin(a)*rr, n = bagN(mp, c), it = ITEMS[c], on = ring.sel===k;
+    ctx.globalAlpha = n ? 1 : .4; ctx.fillStyle = on ? '#3a4566' : '#1c2233'; ctx.strokeStyle = on ? '#ffe14a' : it.col; ctx.lineWidth = on ? 4 : 2;
+    ctx.beginPath(); ctx.arc(x, y, 38, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = it.col; ctx.beginPath(); ctx.arc(x, y-8, 12, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 11px sans-serif'; ctx.fillText(it.name, x, y+16); ctx.font='bold 12px sans-serif'; ctx.fillStyle='#ffe28a'; ctx.fillText('×'+n, x, y+30); });
+  ctx.globalAlpha = 1; ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(ring.sel >= 0 ? '離すと使う' : '方向で選ぶ', cx, cy+4); ctx.restore(); }
 function drawHealBar(mp, W, H){ const hl = isHost ? (mp.heal ? Math.min(1, 1-(mp.heal.t-Date.now())/mp.heal.dur) : 0) : mp.hl, hc = isHost ? (mp.heal && mp.heal.c) : mp.hc;
   if (!hl || !hc) return; const y = H/2 + 96; ctx.fillStyle='#000a'; ctx.fillRect(W/2-90, y-16, 180, 26);
   ctx.fillStyle = ITEMS[hc].col; ctx.fillRect(W/2-86, y+2, 172*hl, 5); ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(`回復中：${ITEMS[hc].name}`, W/2, y-2); }
