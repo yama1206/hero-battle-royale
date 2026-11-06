@@ -32,7 +32,7 @@
 </head>
 <body>
 <div id="lobby"><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階3.5：斜め見下ろし表示</div>
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階3.6：港町ソルティア</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -41,6 +41,8 @@
   </div>
   <div id="roomInfo">
     <div class="sub" style="margin:0;text-align:center">部屋コード</div><div class="code" id="codeOut">----</div>
+    <div id="mapBox"><label>マップ</label><select id="mapSel"></select></div>
+    <div class="sub" id="mapTxt" style="margin:6px 0 0;font-size:12px;line-height:1.5"></div>
     <div id="teamBox"><label>チーム人数</label>
       <select id="teamSel"><option value="1">ソロ</option><option value="2" selected>2人</option><option value="3">3人</option><option value="4">4人</option><option value="5">5人</option></select></div>
     <div class="sub" id="teamTxt" style="margin:8px 0 0"></div>
@@ -59,7 +61,8 @@
 <script>
 // ===== 設定 =====
 const MAX_PLAYERS = 5;
-const MAP = 2000, MATCH_SEC = 600, PREFIX = 'hbr-room-';
+let MAP = 16000;   // マップの広さ（マップを読み込むと変わる）
+const MATCH_SEC = 600, PREFIX = 'hbr-room-';
 const R = 13, SPEED = 220;
 // ---- ここから下の数値は試作用の仮（未決定・あとで差し替え） ----
 const GUN = { rate:0.15, speed:900, dmg:12, range:700 };
@@ -98,14 +101,205 @@ function skinImg(skin, dir){
 const dirOf = (ax, ay) => Math.abs(ax) > Math.abs(ay)*1.2 ? (ax<0?'left':'right') : (ay<0?'back':'front');
 const BOT_NAMES = ['アルファ','ブラボー','チャーリー','デルタ','エコー','フォックス','ゴルフ','ホテル'];
 
-const OBS = (() => { let s = 12345; const rnd = () => (s = (s*16807) % 2147483647) / 2147483647; const a = [];
-  for (let i=0;i<28;i++){ const w=60+rnd()*160, h=60+rnd()*160, x=100+rnd()*(MAP-200-w), y=100+rnd()*(MAP-200-h);
-    if (Math.hypot(x+w/2-MAP/2, y+h/2-MAP/2) < 380) continue; a.push({x,y,w,h}); } return a; })();
+// ===== マップ =====
+// マップはデータで書く：名前・設定・広さ・エリア・建物配置（gen）。増やすときは MAPS に足すだけ（ロビーの選択肢にも出る）
+// 配置は固定シードの自動生成なので全員同じ町になる。手直しは fixed（追加）と remove（消す範囲 [x,y,幅,高さ]）に書く
+//   fixed の例） { k:'crate', x:8000, y:12000, w:34, h:30, ht:30 }
+const MAPS = {
+  soltia: {
+    name:'港町ソルティア',
+    story:'交易で栄えた港町。ヒーロー大会の会場に選ばれ住民は避難し、運営の物資箱だけが残る。南は海（入れない）、北は丘。',
+    size:16000, seed:20261106,
+    // エリア（後ろに書いたものが優先）。loot＝物資の量（物資箱を入れたときに使う）
+    areas:[
+      { id:'north',    name:'北のはずれ',     g:'grass',    r:[0,0,16000,1800],        loot:'少' },
+      { id:'west',     name:'西の野原',       g:'grass',    r:[0,1800,2700,8000],      loot:'少' },
+      { id:'hill',     name:'丘の住宅街',     g:'grass2',   r:[2700,1800,10900,3040],  loot:'中' },
+      { id:'easthill', name:'東の丘',         g:'grass',    r:[13600,1800,2400,3040],  loot:'少' },
+      { id:'craft',    name:'職人通り',       g:'cobble',   r:[2880,5030,2370,4960],   loot:'少' },
+      { id:'old',      name:'旧市街',         g:'cobble',   r:[5410,5030,5370,4960],   loot:'多' },
+      { id:'ware',     name:'倉庫通り',       g:'concrete', r:[10940,5030,2310,4960],  loot:'少' },
+      { id:'ship',     name:'造船所',         g:'concrete', r:[13430,5030,2570,11000], loot:'多' },
+      { id:'cape',     name:'灯台の岬',       g:'rock',     r:[0,9800,2700,6200],      loot:'中' },
+      { id:'market',   name:'魚市場',         g:'quay',     r:[2880,10310,2370,5700],  loot:'中' },
+      { id:'pier',     name:'大桟橋',         g:'quay',     r:[5410,10310,5370,5700],  loot:'多' },
+      { id:'yard',     name:'コンテナヤード', g:'concrete', r:[10940,10310,2310,5700], loot:'多' },
+    ],
+    fixed:[], remove:[],
+    gen: genSoltia,
+  },
+};
+let W = null; // 今のマップ（建物・道・水など）
+const world = () => W;
+const HC = 400; // 当たり判定・描画用のマス目の大きさ
+const inR = (r,x,y) => x>=r[0] && x<r[0]+r[2] && y>=r[1] && y<r[1]+r[3];
+const sstep = (a,b,x) => { const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); };
+const h2 = (x,y) => { let h=(Math.imul(x|0,374761393)+Math.imul(y|0,668265263))|0; h=Math.imul(h^(h>>>13),1274126177); return ((h^(h>>>16))>>>0)/4294967296; };
+function mulberry(a){ return () => { a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function shade(hex,f){ const n=parseInt(hex.slice(1),16); let r=n>>16,g=n>>8&255,b=n&255;
+  if (f<0){ r*=1+f; g*=1+f; b*=1+f; } else { r+=(255-r)*f; g+=(255-g)*f; b+=(255-b)*f; } return `rgb(${r|0},${g|0},${b|0})`; }
+function hIns(hs,o){ for (let i=Math.floor(o.bx/HC); i<=Math.floor((o.bx+o.bw)/HC); i++) for (let j=Math.floor(o.by/HC); j<=Math.floor((o.by+o.bh)/HC); j++){ const k=i+j*4096; let a=hs.get(k); if(!a) hs.set(k,a=[]); a.push(o); } }
+let qStamp = 0;
+function hQuery(hs,x0,y0,x1,y1,out){ qStamp++; out=out||[];
+  for (let i=Math.floor(x0/HC); i<=Math.floor(x1/HC); i++) for (let j=Math.floor(y0/HC); j<=Math.floor(y1/HC); j++){ const a=hs.get(i+j*4096); if(!a) continue;
+    for (const o of a){ if (o._q===qStamp) continue; o._q=qStamp; out.push(o); } } return out; }
+// 障害物（ぶつかる物）。ht＝見た目の高さ、low＝低い物（弾は上を通る）、top＝絵が上にはみ出す長さ
+function addObs(o){ o.ht=o.ht||0; if (o.top===undefined) o.top=o.ht; o.bx=o.x; o.by=o.y; o.bw=o.w; o.bh=o.h;
+  if (!o.ib) o.ib=[o.x-6, o.y-o.top-6, o.w+12, o.h+o.top+12]; W.obs.push(o); hIns(W.hash,o); return o; }
+// 飾り（ぶつからない物：街灯・船・クレーン・船の骨組みなど）
+function addDeco(d){ W.decor.push(d); hIns(W.dhash,d); return d; }
+function areaAt(x,y){ for (let i=W.areas.length-1;i>=0;i--) if (inR(W.areas[i].r,x,y)) return W.areas[i]; return null; }
+function buildWorld(id){
+  const def = MAPS[id] || MAPS.soltia; MAP = def.size;
+  W = { id: MAPS[id]?id:'soltia', def, areas:def.areas, obs:[], decor:[], roads:[], canals:[], bridges:[], docks:[], grects:[], gdecor:[], lateRoofs:[],
+        hash:new Map(), dhash:new Map(), chunks:new Map(), shoreY:()=>1e9, lh:null };
+  def.gen(W, def, mulberry(def.seed));
+  for (const f of def.fixed||[]) addObs(Object.assign({}, f));
+  if ((def.remove||[]).length) { const hit = o => def.remove.some(r => o.x<r[0]+r[2] && o.x+o.w>r[0] && o.y<r[1]+r[3] && o.y+o.h>r[1]);
+    W.obs = W.obs.filter(o=>!hit(o)); W.hash = new Map(); for (const o of W.obs) hIns(W.hash,o); }
+}
+
+function genSoltia(W, def, rnd){
+  const S=def.size, ri=(a,b)=>a+rnd()*(b-a), pick=a=>a[rnd()*a.length|0];
+  // 海岸線：南が海。西の端（灯台の岬）は海に突き出る
+  W.shoreY = x => { const t=sstep(3300,2100,x); return 13000 + Math.sin(x*0.0021)*45 + Math.sin(x*0.00063+1.3)*100 + t*(1500+Math.sin(x*0.004)*80); };
+  // 道路（g：見た目の種類）
+  const road=(x,y,w,h,g='road')=>W.roads.push({r:[x,y,w,h],g});
+  road(0,4840,S,190);                                   // 丘と町を分ける大通り
+  road(7935,0,130,1800,'dirt'); road(7900,1800,200,11400); // 北の畑から大桟橋へまっすぐ
+  road(2700,4840,180,8300); road(13250,4840,180,8200);  // 西の通り・東の通り
+  road(2880,6200,10370,140); road(2880,8900,10370,140); // 旧市街の横の通り
+  road(6600,5030,140,4960); road(9400,5030,140,4960);   // 旧市街の縦の通り
+  road(2880,9990,10370,160); road(2880,10310,10370,150); road(2880,11700,10370,150); // 運河沿い・港通り
+  for (const x of [3900,6100,9050,10050,12100]) road(x,10150,100,160); // 運河の小さな橋
+  road(2880,2480,10720,120); road(2880,3700,10720,120); // 丘の坂道
+  road(0,900,S,100,'dirt'); for (const x of [4200,6300,9700,11800]) road(x,1800,100,3040,'dirt');
+  road(1205,9800,100,3780,'dirt'); road(1305,11000,1395,100,'dirt'); // 灯台への小道
+  // 運河（町を区切る）。道と交わるところは自動で橋になる
+  W.canals.push([2880,10150,10370,160],[5250,5030,160,8300],[10780,5030,160,8300]);
+  for (const c of W.canals) for (const {r} of W.roads) { const x0=Math.max(c[0],r[0]), y0=Math.max(c[1],r[1]), x1=Math.min(c[0]+c[2],r[0]+r[2]), y1=Math.min(c[1]+c[3],r[1]+r[3]);
+    if (x1>x0 && y1>y0) W.bridges.push([x0,y0,x1-x0,y1-y0]); }
+  // 海の上を歩ける場所（桟橋・岸壁・船台）
+  W.docks.push({r:[7550,12600,900,2700],g:'wood'},{r:[6800,14250,750,180],g:'wood'},{r:[8450,13700,750,180],g:'wood'},
+               {r:[3850,12500,260,1300],g:'wood'},{r:[11000,12600,2100,700],g:'concrete'});
+  const SLIPS=[13700,14450,15200]; for (const sx of SLIPS) W.docks.push({r:[sx,10900,460,3000],g:'slip'});
+
+  const blocked=[];
+  function free(r,m,ignore){ const [x,y,w,h]=r; if (x<m||y<m||x+w>S-m||y+h>S-m) return false;
+    const hit=q=>!(x+w+m<=q[0]||x-m>=q[0]+q[2]||y+h+m<=q[1]||y-m>=q[1]+q[3]);
+    for (const rd of W.roads) if (hit(rd.r)) return false; for (const c of W.canals) if (hit(c)) return false;
+    if (!ignore) for (const b of blocked) if (hit(b)) return false;
+    const e=Math.min(m,40); for (const [px,py] of [[x-e,y-e],[x+w+e,y-e],[x-e,y+h+e],[x+w+e,y+h+e],[x+w/2,y+h/2]]) if (wetAt(px,py)) return false;
+    for (const o of hQuery(W.hash,x-m,y-m,x+w+m,y+h+m)) if (!(x+w+m<=o.x||x-m>=o.x+o.w||y+h+m<=o.y||y-m>=o.y+o.h)) return false;
+    return true; }
+  // 予約地（自動生成で建物を置かない場所）
+  const PLAZA=[7350,7050,1300,1000], HALL=[3150,10600,1800,900];
+  W.grects.push({r:PLAZA,g:'plaza'});
+  blocked.push(PLAZA,[HALL[0]-50,HALL[1]-40,HALL[2]+100,HALL[3]+90],[7500,12550,1000,2800],[3830,12450,300,1400],[10990,12620,2200,700]);
+  for (const sx of SLIPS) blocked.push([sx-20,10850,500,3100]);
+  // 畑
+  for (let i=0;i<60;i++){ const w=ri(600,1300), h=ri(300,650), north=i<40, x=north?ri(150,S-w-150):ri(100,2550-w), y=north?ri(80,1750-h):ri(1950,9500-h), r=[x,y,w,h];
+    if (free(r,40)) { W.grects.push({r,g:rnd()<.5?'fieldG':'fieldW'}); blocked.push(r); } }
+
+  const OLDW=['#efe4cf','#e8d6b0','#f3efe6','#e6c9b8','#d9cfbd','#cfd8d6','#f0dcb4'], OLDR=['#b5523b','#c46a3c','#9c4535','#5d6b7a','#7a5a48','#4f7f8c','#c08a3e'];
+  const HILW=['#f4efe2','#e9f0f2','#f2e3d0','#e2ecd9','#f5e1e1','#efe8d8'], HILR=['#4f7f8c','#c46a3c','#7a5a48','#5d6b7a','#a94a3a','#6f8f5a'];
+  const WHW=['#9aa3a8','#b5a48a','#8c9c8f','#a88f7a','#7f8fa3'], WHR=['#6d747a','#7b5e4f','#5b6b74','#857a6a'];
+  const AWN=['#c8402e','#2f6fb8','#3c8d4a','#d1822b','#8a4fa0'];
+  const bld=(x,y,w,h,ht,W0,R0,extra)=>{ const wall=pick(W0), roof=pick(R0);
+    return addObs(Object.assign({k:'bld',x,y,w,h,ht,cW:wall,cWd:shade(wall,-.2),cRl:shade(roof,.1),cRd:shade(roof,-.12),cRline:shade(roof,-.35),
+      door:rnd()<.75, chim:rnd()<.3, seed:rnd()*1e9|0}, extra||{})); };
+  const wh=(x,y,w,h,ht)=>{ const wall=pick(WHW), roof=pick(WHR); return addObs({k:'wh',x,y,w,h,ht,cW:wall,cWd:shade(wall,-.18),cRl:roof,cRd:shade(roof,-.2)}); };
+  const TREEC=[['#2f5a2a','#3f7234','#5a8f45'],['#2c5530','#3a6b3c','#548a4e'],['#3b5a22','#4e7530','#6b9642']];
+  const tree=(cx,cy)=>{ const r=ri(30,48), o={k:'tree',x:cx-10,y:cy-7,w:20,h:14,ht:0,r,c:pick(TREEC)}; if (!free([o.x,o.y,o.w,o.h],16)) return;
+    o.top=62+r; o.ib=[cx-r,cy-62-r,2*r,2*r+62]; addObs(o); };
+  const cluster=(cx,cy,ignore,ice)=>{ const n=2+(rnd()*4|0); for (let i=0;i<n;i++){ const isB=!ice&&rnd()<.35, w=isB?24:34, h=isB?22:30, x=cx+(i%3)*(w+4), y=cy+(i/3|0)*(h+4);
+      if (!free([x,y,w,h],3,ignore)) continue;
+      addObs(isB?{k:'barrel',x,y,w,h,ht:28}:{k:'crate',x,y,w,h,ht:!ice&&rnd()<.25?56:30, col:ice?'#e3ecef':'#b07c44', cd:ice?'#b9c6cc':'#86592f', ice}); } };
+
+  // --- 旧市街：建物が密集。中心に噴水の広場 ---
+  addObs({k:'fountain',x:7910,y:7480,w:180,h:140,ht:24});
+  for (const [x,y] of [[7430,7120],[8570,7120],[7430,7980],[8570,7980]]) tree(x,y);
+  const rowTown=(x0,x1,y0,y1,sx,sy,W0,R0,dense)=>{
+    for (let gx=x0; gx<x1; gx+=sx) for (let gy=y0; gy<y1; gy+=sy) {
+      if (rnd()<(dense?0.07:0.25)) { tree(gx+sx/2,gy+sy/2); continue; }
+      let x=gx+40; const H0=sy-80, end=gx+sx-40;
+      while (x < end-80) { const w=Math.min(end-x,ri(110,230)), h=ri(H0*0.55,H0), r=[x,gy+40+(H0-h),w,h];
+        if ((dense||rnd()<.6) && free(r,4)) bld(...r, dense?ri(62,100):ri(48,70), W0, R0, {awn:dense&&rnd()<.35?pick(AWN):null});
+        x += w + 8 + (rnd()<.3?ri(20,60):0); } } };
+  rowTown(5440,10760,5060,9990,430,380,OLDW,OLDR,true);
+  rowTown(2900,5240,5060,9990,520,460,OLDW,OLDR,false);   // 職人通り
+  // --- 丘の住宅街：小さな家が点在 ---
+  for (let i=0;i<460;i++){ const w=ri(110,170), h=ri(90,130), x=ri(2700,13500), y=ri(1850,4700); if (free([x,y,w,h],55)) bld(x,y,w,h,ri(40,54),HILW,HILR); }
+  for (let i=0;i<260;i++) tree(ri(2700,16000), ri(1850,4750));
+  // --- 北のはずれ・西の野原：畑と雑木林 ---
+  for (let c=0;c<34;c++){ const cx=ri(200,S-200), cy=ri(150,1700); for (let i=0;i<22;i++) tree(cx+ri(-420,420), cy+ri(-260,260)); }
+  for (let c=0;c<14;c++){ const cx=ri(150,2550), cy=ri(1950,9600); for (let i=0;i<16;i++) tree(cx+ri(-300,300), cy+ri(-300,300)); }
+  // --- 倉庫通り ---
+  for (let gx=10990; gx<13200; gx+=560) for (let gy=5080; gy<9950; gy+=470) { const r=[gx+ri(0,30),gy+ri(0,30),ri(380,500),ri(260,380)]; if (rnd()<.85 && free(r,30)) wh(...r,ri(70,96)); }
+  for (let i=0;i<30;i++) cluster(ri(10990,13200), ri(5080,9950));
+  // --- コンテナヤード：迷路のような列。岸壁にガントリークレーン ---
+  const CC=['#b8432f','#2f6fb8','#3c8d4a','#d1822b','#7b4fa0','#c9b23a','#3a8f9c','#8a8f96'];
+  for (let y=10520; y<12500; y+=150) { let x=11010+ri(0,60);
+    while (x < 13150) { const w=rnd()<.6?250:125; if (rnd()<.16) { x+=ri(90,180); continue; }
+      const n=rnd()<.3?2:1, cs=[pick(CC),pick(CC)];
+      if (x+w<13200 && free([x,y,w,62],6)) addObs({k:'cont',x,y,w,h:62,ht:44*n,n,cs,ct:shade(cs[n-1],.15)});
+      x += w + ri(10,60); } }
+  for (const cx of [11500,12500]) { const gy=12760;
+    for (const [lx,ly] of [[cx-230,gy],[cx+230,gy],[cx-230,gy+100],[cx+230,gy+100]]) addObs({k:'leg',x:lx-13,y:ly-13,w:26,h:26,ht:0});
+    addDeco({k:'gantry',x:cx,y:gy,key:gy+113,ph:rnd()*6,bx:cx-280,by:gy-240,bw:560,bh:360}); }
+  for (let i=0;i<16;i++) cluster(ri(11000,13100), ri(12650,13200), true);
+  // --- 造船所：船台に船の骨組み・低い足場・クレーン ---
+  for (const sx of SLIPS) {
+    addObs({k:'keel',x:sx+210,y:11350,w:40,h:1650,ht:14,low:true});
+    for (let y=11420; y<12980; y+=110) { const f=(y-11350)/1650, half=40+150*Math.pow(Math.sin(Math.PI*f),0.6);
+      addDeco({k:'rib',x:sx+230,y,half,key:y,bx:sx+230-half,by:y-110,bw:half*2,bh:114}); }
+    for (const [y0,y1] of [[11300,11850],[11980,12500],[12620,13000]]) { addObs({k:'scaf',x:sx+30,y:y0,w:34,h:y1-y0,ht:18,low:true}); addObs({k:'scaf',x:sx+396,y:y0,w:34,h:y1-y0,ht:18,low:true}); }
+    addObs({k:'leg',x:sx+420,y:10930,w:40,h:40,ht:0});
+    addDeco({k:'tcrane',x:sx+440,y:10970,key:10970,ph:rnd()*6,bx:sx-20,by:10520,bw:600,bh:460}); }
+  for (let gx=13480; gx<15900; gx+=620) for (let gy=5080; gy<10700; gy+=560) { const r=[gx+ri(0,40),gy+ri(0,40),ri(380,540),ri(300,420)]; if (rnd()<.8 && free(r,40)) wh(...r,ri(80,104)); }
+  for (let i=0;i<50;i++){ const x=ri(13480,15900), y=ri(5080,10800), w=ri(120,220); if (free([x,y,w,40],20)) addObs({k:'timber',x,y,w,h:40,ht:20,low:true}); }
+  for (let i=0;i<24;i++) cluster(ri(13480,15900), ri(5080,10800));
+  // --- 魚市場：屋根付きの大きな建物（柱だけなので出入口が多い） ---
+  const [HX,HY,HW,HH]=HALL;
+  for (let x=HX; x<=HX+HW-26; x+=300) { addObs({k:'pillar',x,y:HY,w:26,h:26,ht:92}); addObs({k:'pillar',x,y:HY+HH-26,w:26,h:26,ht:92}); }
+  for (let y=HY+300; y<HY+HH-26; y+=300) { addObs({k:'pillar',x:HX,y,w:26,h:26,ht:92}); addObs({k:'pillar',x:HX+HW-26,y,w:26,h:26,ht:92}); }
+  for (let row=0; row<4; row++) for (let x=HX+110; x<HX+HW-200; x+=240) { if (Math.abs(x+90-(HX+HW/2))<140) continue;
+    addObs({k:'stall',x,y:HY+130+row*190,w:180,h:56,ht:28,top:90,col:pick(AWN)}); }
+  W.lateRoofs.push({x:HX-20,y:HY-10,w:HW+40,h:HH+20,ht:100,label:'ソルティア魚市場',ib:[HX-20,HY-110,HW+40,HH+36]});
+  for (let i=0;i<40;i++) cluster(ri(2900,5200), ri(11600,12850), false, rnd()<.6);
+  for (let i=0;i<60;i++){ const w=ri(140,220), h=ri(110,160), x=ri(2900,5150), y=ri(10480,12700); if (free([x,y,w,h],40)) bld(x,y,w,h,ri(44,60),HILW,OLDR); }
+  for (let i=0;i<10;i++) W.gdecor.push({k:'net',x:ri(3000,5100),y:ri(12100,12800),r:ri(40,70)});
+  // --- 大桟橋と港通り ---
+  for (let x=5450; x<10760; x+=ri(300,520)) { const r=[x,10500+ri(0,60),ri(220,420),ri(200,360)]; if (free(r,20)) wh(...r,ri(60,84)); }
+  for (let x=5450; x<10760; x+=ri(200,360)) { const r=[x,11880+ri(0,40),ri(140,260),ri(140,200)]; if (free(r,20)) bld(...r,ri(50,70),OLDW,OLDR,{awn:rnd()<.4?pick(AWN):null}); }
+  for (let i=0;i<70;i++) cluster(ri(5450,10750), ri(12150,12850));
+  for (let i=0;i<16;i++) cluster(ri(7600,8350), ri(13300,15000), true);
+  bld(7800,14950,400,220,56,OLDW,OLDR);  // 桟橋の先の売店
+  for (let i=0;i<8;i++) W.gdecor.push({k:'net',x:ri(7640,8360),y:ri(13300,15200),r:ri(35,60)});
+  // --- 灯台の岬 ---
+  W.lh = addObs({k:'lh',x:1180,y:13600,w:150,h:130,ht:24,top:340,ib:[1180,13260,150,470]});
+  bld(1450,13380,220,150,50,HILW,HILR);
+  for (let i=0;i<70;i++){ const w=ri(40,90), h=ri(30,60), x=ri(100,2600), y=ri(9900,14600); if (free([x,y,w,h],30)) addObs({k:'rock',x,y,w,h,ht:ri(18,34)}); }
+  for (let i=0;i<40;i++) tree(ri(100,2600), ri(9900,12200));
+  // --- 街灯（道ぞい） ---
+  for (const {r,g} of W.roads) { if (g!=='road') continue; const vert=r[3]>r[2], len=vert?r[3]:r[2];
+    for (let s=120; s<len; s+=380) { const x=vert?r[0]+10:r[0]+s, y=vert?r[1]+s:r[1]+10; if (wetAt(x,y) || inR(PLAZA,x,y)) continue;
+      addDeco({k:'lamp',x,y,key:y,bx:x-8,by:y-80,bw:16,bh:84}); } }
+  for (let y=12900; y<15250; y+=300) for (const x of [7572,8428]) addDeco({k:'lamp',x,y,key:y,bx:x-8,by:y-80,bw:16,bh:84});
+  // --- 船（水に浮かんでゆれる） ---
+  const BC=['#2f6fb8','#c8402e','#3c8d4a','#e8e2d2','#d1822b','#355a7a'];
+  const boat=(x,y,len,v)=>addDeco({k:'boat',x,y,len,v,c:pick(BC),cab:rnd()<.6,ph:rnd()*6,key:y,bx:x-len,by:y-len,bw:len*2,bh:len*2});
+  for (let x=3000; x<13200; x+=ri(240,420)) { if ((x>7400&&x<8600)||(x>3700&&x<4250)||(x>10950&&x<13150)) continue;
+    const y=W.shoreY(x)+ri(60,95); if (wetAt(x-90,y) && wetAt(x+90,y)) boat(x,y,ri(110,170),false); }
+  for (let y=13300; y<15200; y+=ri(300,480)) { if (y<14200||y>14500) boat(7490,y,ri(110,150),true); if (y+150<13650||y+150>13950) boat(8510,y+150,ri(110,150),true); }
+  boat(3795,13000,120,true); boat(4165,13350,130,true);
+  for (const x of [3500,6800,8600,11800]) boat(x,10230,120,false);
+}
 
 // ===== 状態 =====
 let peer=null, isHost=false, myId=null, roomCode='';
 let conns={}, hostConn=null;
-let state = { phase:'lobby', players:[], bullets:[], startAt:0, teamSize:2 };
+let state = { map:'soltia', phase:'lobby', players:[], bullets:[], startAt:0, teamSize:2 };
 let clockOffset = 0;
 const inputs = {}, engaged = {};   // ホスト用：最新入力／チームごとのBOT攻撃許可の期限
 const $ = id => document.getElementById(id);
@@ -117,16 +311,30 @@ const teamOf = slot => Math.floor(slot / state.teamSize);
 const alive = p => !p.down && !p.out;
 
 // ===== 当たり判定 =====
-function pushOut(p){
-  for (const o of OBS) {
+// 水（海・運河）は入れない。桟橋・橋の上は歩ける
+function wetAt(x,y){ if (x<0||y<0||x>MAP||y>MAP) return true;
+  if (y > W.shoreY(x)) { for (const d of W.docks) if (inR(d.r,x,y)) return false; return true; }
+  for (const c of W.canals) if (inR(c,x,y)) { for (const b of W.bridges) if (inR(b,x,y)) return false; return true; }
+  return false; }
+const wetFoot = (x,y) => wetAt(x,y)||wetAt(x+R*.8,y)||wetAt(x-R*.8,y)||wetAt(x,y+R*.5)||wetAt(x,y-R*.5);
+const _near = [];
+function pushOut(p, px, py){
+  _near.length = 0; hQuery(W.hash, p.x-R, p.y-R, p.x+R, p.y+R, _near);
+  for (const o of _near) {
     const nx = Math.max(o.x, Math.min(p.x, o.x+o.w)), ny = Math.max(o.y, Math.min(p.y, o.y+o.h));
     const dx = p.x-nx, dy = p.y-ny, d = Math.hypot(dx,dy);
     if (d < R) { if (d===0) { p.y = o.y - R; } else { p.x = nx + dx/d*R; p.y = ny + dy/d*R; } }
   }
   p.x = Math.max(R, Math.min(MAP-R, p.x)); p.y = Math.max(R, Math.min(MAP-R, p.y));
+  if (px!==undefined && wetFoot(p.x,p.y) && !wetFoot(px,py)) { // 水に入ろうとしたら、入らない方向だけ動く
+    if (!wetFoot(p.x,py)) p.y = py; else if (!wetFoot(px,p.y)) p.x = px; else { p.x = px; p.y = py; } }
 }
-const inObs = (x,y) => OBS.some(o => x>o.x && x<o.x+o.w && y>o.y && y<o.y+o.h);
-function freeSpot(){ for(;;){ const p={x:100+Math.random()*(MAP-200), y:100+Math.random()*(MAP-200)}; if(!OBS.some(o=>p.x>o.x-R&&p.x<o.x+o.w+R&&p.y>o.y-R&&p.y<o.y+o.h+R)) return p; } }
+function inObs(x,y){ const a = W.hash.get(Math.floor(x/HC)+Math.floor(y/HC)*4096); if (!a) return false;
+  for (const o of a) if (!o.low && x>o.x && x<o.x+o.w && y>o.y && y<o.y+o.h) return true; return false; }
+const spotOK = (x,y) => x>R && y>R && x<MAP-R && y<MAP-R && !wetFoot(x,y) &&
+  !hQuery(W.hash,x-R-4,y-R-4,x+R+4,y+R+4).some(o=>x>o.x-R&&x<o.x+o.w+R&&y>o.y-R&&y<o.y+o.h+R);
+function freeSpot(cx, cy, rad){ for (let i=0;i<300;i++){ const x = cx===undefined ? 200+Math.random()*(MAP-400) : cx+(Math.random()*2-1)*rad, y = cy===undefined ? 200+Math.random()*(MAP-400) : cy+(Math.random()*2-1)*rad;
+    if (spotOK(x,y)) return {x,y}; } return cx===undefined ? {x:8000,y:7300} : freeSpot(cx, cy, rad*1.5+50); }
 function losClear(a,b){ const n = Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/20); for(let i=1;i<n;i++){ if(inObs(a.x+(b.x-a.x)*i/n, a.y+(b.y-a.y)*i/n)) return false; } return true; }
 
 // ===== 入力（自分） =====
@@ -180,7 +388,7 @@ function localStep(dt){
   const me = state.players.find(p=>p.id===myId); if (!me) return null;
   if (!local || local.rs !== me.rs) local = { x:me.x, y:me.y, rs:me.rs };
   const inp = readInput(local);
-  if (!me.out) { const sp = me.down ? CRAWL : SPEED; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local); }
+  if (!me.out) { const sp = me.down ? CRAWL : SPEED, ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
   local.ax = inp.ax; local.ay = inp.ay; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
   return local;
 }
@@ -218,10 +426,10 @@ function hostStartMatch(){
   for (let s=0;s<MAX_PLAYERS;s++) if (!state.players.some(p=>p.slot===s)) state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s });
   // チームごとにまとまって配置
   const nTeams = Math.ceil(MAX_PLAYERS/state.teamSize), base = [];
-  for (let t=0;t<nTeams;t++){ const a=t/nTeams*Math.PI*2; base.push({ x:MAP/2+Math.cos(a)*600, y:MAP/2+Math.sin(a)*600 }); }
-  state.players.forEach(p => { const b=base[teamOf(p.slot)], k=p.slot%state.teamSize;
-    Object.assign(p, { skin:p.skin||'default', x:b.x+(k-1)*50, y:b.y+(k%2)*40, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, kills:0, rv:0, dhp:0, dsh:0 });
-    pushOut(p); });
+  const a0 = Math.random()*Math.PI*2;
+  for (let t=0;t<nTeams;t++){ const a=a0+t/nTeams*Math.PI*2; base.push(freeSpot(8000+Math.cos(a)*1400, 7550+Math.sin(a)*1400, 300)); } // 仮：旧市街のまわりに出現
+  state.players.forEach(p => { const b=base[teamOf(p.slot)], s=freeSpot(b.x, b.y, 90);
+    Object.assign(p, { skin:p.skin||'default', x:s.x, y:s.y, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, kills:0, rv:0, dhp:0, dsh:0, wp:null }); });
   for (const k in engaged) delete engaged[k];
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
   broadcast(); enterGame();
@@ -239,10 +447,11 @@ function hostTick(dt){
     let inp = p.id===myId ? local : p.bot ? botThink(p, dt) : inputs[p.id];
     if (!inp) continue;
     const sp = p.down ? CRAWL : SPEED;
-    if (p.bot) { p.x += inp.mx*sp*dt; p.y += inp.my*sp*dt; pushOut(p); }
+    const ox = p.x, oy = p.y;
+    if (p.bot) { p.x += inp.mx*sp*dt; p.y += inp.my*sp*dt; pushOut(p, ox, oy); }
     else if (inp.x!==undefined) {
       const dx=inp.x-p.x, dy=inp.y-p.y, d=Math.hypot(dx,dy), lim=sp*0.5+20;
-      if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p); }
+      if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p, ox, oy); }
     p.ax = inp.ax; p.ay = inp.ay; // ダウン中はこの向きがダウンシールドの向き
     p.cd -= dt; p.reviving = false;
     if (p.down) { if (now >= p.bleedAt) eliminate(p, '時間切れ'); continue; }
@@ -309,7 +518,9 @@ function botThink(p, dt){
     const dm = mates.find(q=>q.down);
     if (dm && !p.down && (!tgt || Math.hypot(dm.x-p.x,dm.y-p.y) < 300)) p.revTgt = dm.id; // 味方の蘇生を優先
     if (humanMate) { const a=p.slot*2.1; p.wp = { x:humanMate.x+Math.cos(a)*70, y:humanMate.y+Math.sin(a)*70 }; } // 人間の味方に追従
-    else if (!p.wp || Math.hypot(p.wp.x-p.x,p.wp.y-p.y)<40 || Math.random()<0.05) p.wp = freeSpot();
+    else { // 近くをうろうろ。引っかかって動けなければ行き先を変える
+      p._st = (p._st||0) + 1; if (p._st >= 4) { p._st = 0; if (Math.hypot(p.x-(p._sx??p.x+99), p.y-(p._sy??p.y)) < 40) p.wp = null; p._sx = p.x; p._sy = p.y; }
+      if (!p.wp || Math.hypot(p.wp.x-p.x,p.wp.y-p.y)<40 || Math.random()<0.03) p.wp = freeSpot(p.x, p.y, 1200); }
   }
   const tgt = state.players.find(q=>q.id===p.tgt && !q.out);
   const rev = state.players.find(q=>q.id===p.revTgt && q.down);
@@ -327,7 +538,7 @@ let feeds = [];
 function feed(t){ feeds.push({ t, at:Date.now() }); state.feed = feeds.slice(-5); }
 function broadcast(){
   const now = Date.now();
-  const s = { phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner,
+  const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner,
     players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, dhp:p.dhp, dsh:p.dsh, rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy)]) };
@@ -350,6 +561,7 @@ function startJoin(){
         clockOffset = d.now - Date.now(); const before = state.phase;
         const prev = {}; for (const p of state.players) prev[p.id] = p;
         state = d.s; state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3]}));
+        if (state.map && W.id !== state.map) buildWorld(state.map);
         for (const p of state.players) { const o=prev[p.id]; const keep = o && o.dx!==undefined && o.rs===p.rs; p.dx=keep?o.dx:p.x; p.dy=keep?o.dy:p.y; }
         if (before==='lobby' && state.phase==='match') { local=null; enterGame(); }
         else if (before!=='lobby' && state.phase==='lobby') showLobby();
@@ -363,16 +575,19 @@ function startJoin(){
 
 // ===== ロビー =====
 function showRoom(){ $('entry').style.display='none'; $('roomInfo').style.display='block'; $('codeOut').textContent=roomCode;
-  $('btnStart').style.display=isHost?'block':'none'; $('waitTxt').style.display=isHost?'none':'block'; $('teamBox').style.display=isHost?'block':'none'; msg(''); renderList(); }
+  $('btnStart').style.display=isHost?'block':'none'; $('waitTxt').style.display=isHost?'none':'block'; $('teamBox').style.display=isHost?'block':'none'; $('mapBox').style.display=isHost?'block':'none'; msg(''); renderList(); }
 function showLobby(){ $('game').style.display='none'; $('result').style.display='none'; $('lobby').style.display='flex'; showRoom(); }
 function renderList(){
-  if (isHost) state.teamSize = +$('teamSel').value;
+  if (isHost) { state.teamSize = +$('teamSel').value; state.map = $('mapSel').value; }
+  const md = MAPS[state.map] || MAPS.soltia; $('mapTxt').textContent = `マップ：${md.name}　${md.story}`;
   $('teamTxt').textContent = 'チーム：' + (state.teamSize===1 ? 'ソロ' : state.teamSize+'人');
   let h=''; for (let s=0;s<MAX_PLAYERS;s++){ const p=state.players.find(p=>p.slot===s);
     h+=`<li><span style="color:${COLORS[s]}">● ${p?esc(p.name):'（空き）'}</span><span class="tag">チーム${teamOf(s)+1}・${p?(p.bot?'BOT':(s===0?'ホスト':'参加')):(isHost?'開始時BOT':'空き')}${p&&p.id===myId?'・あなた':''}</span></li>`; }
   $('plist').innerHTML = h;
 }
 $('teamSel').onchange = () => { renderList(); broadcast(); };
+$('mapSel').innerHTML = Object.entries(MAPS).map(([k,m])=>`<option value="${k}">${esc(m.name)}</option>`).join('');
+$('mapSel').onchange = () => { renderList(); buildWorld(state.map); broadcast(); };
 
 // ===== ゲーム画面 =====
 const cv=$('cv'), ctx=cv.getContext('2d');
@@ -382,7 +597,7 @@ cv.addEventListener('touchstart',tStart,{passive:false}); cv.addEventListener('t
 cv.addEventListener('touchend',tEnd,{passive:false}); cv.addEventListener('touchcancel',tEnd,{passive:false});
 cv.addEventListener('contextmenu', e=>e.preventDefault());
 let looping = false;
-function enterGame(){ $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null;
+function enterGame(){ $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
   if (!looping) { looping=true; lastT=performance.now(); requestAnimationFrame(frame); } }
 
 let netAcc = 0;
@@ -398,12 +613,260 @@ function frame(t){
   requestAnimationFrame(frame);
 }
 // ===== 斜め見下ろしの描画 =====
-function drawBlock(o){
-  ctx.fillStyle='rgba(0,0,0,.22)'; ctx.fillRect(o.x+6, o.y+6, o.w, o.h);               // 影
-  ctx.fillStyle='#474c5a'; ctx.fillRect(o.x, o.y+o.h-WALL_H, o.w, WALL_H);              // 正面
-  ctx.fillStyle='#7c8293'; ctx.fillRect(o.x, o.y-WALL_H, o.w, o.h);                     // 上面
-  ctx.strokeStyle='#9aa0b0'; ctx.lineWidth=2; ctx.strokeRect(o.x+1, o.y-WALL_H+1, o.w-2, o.h-2);
+// ---- 地面：マップを小さな板（チャンク）に分けて、画面に入った分だけ描いて取っておく ----
+const CH = 384;
+let chunkBudget = 0, chunkMax = 40;
+const GC = { grass:[79,122,58], grass2:[90,132,64], rock:[100,120,78], soil:[116,86,52], fieldG:[118,152,58], fieldW:[200,170,84],
+  cobble:[150,141,126], cobbleM:[98,93,85], road:[132,126,116], roadM:[94,90,84], plaza:[182,172,152], plazaM:[132,124,110],
+  bridge:[162,146,120], bridgeM:[112,100,84], quay:[154,148,136], quayM:[110,106,98], wood:[142,102,62], woodG:[66,45,28],
+  concrete:[148,152,154], slip:[114,118,122], sand:[216,200,148], dirt:[140,116,84], canal:[44,108,126], seaS:[70,156,172], seaD:[22,76,118] };
+const rgb = (c,d) => `rgb(${c[0]+d|0},${c[1]+d|0},${c[2]+d|0})`;
+const isWaterT = t => t==='sea' || t==='canal';
+function groundAt(x,y){
+  if (x<0||y<0||x>=MAP||y>=MAP) return 'sea';
+  for (const d of W.docks) if (inR(d.r,x,y)) return d.g;
+  if (y > W.shoreY(x)) return 'sea';
+  for (const b of W.bridges) if (inR(b,x,y)) return 'bridge';
+  for (const c of W.canals) if (inR(c,x,y)) return 'canal';
+  for (const q of W.grects) if (inR(q.r,x,y)) return q.g;
+  for (const rd of W.roads) if (inR(rd.r,x,y)) return rd.g;
+  if (x < 2900 && y > W.shoreY(x)-120) return 'sand';
+  const a = areaAt(x,y); return a ? a.g : 'grass';
 }
+function paintCell(g,x,y,t){
+  const r=h2(x,y), r2=h2(x+7,y+3);
+  switch (t) {
+    case 'grass': case 'grass2': case 'rock': { const b=GC[t]; g.fillStyle=rgb(b,(r-.5)*8); g.fillRect(x,y,16,16);
+      if (r2<.45) { g.fillStyle=rgb(b,-18); g.fillRect(x+(r*12|0), y+((r2*20)|0)%12, 2, 4); }
+      if (r2>.8) { g.fillStyle=rgb(b,14); g.fillRect(x+((r*7+5)|0)%13, y+((r2*31)|0)%12, 2, 3); }
+      if (t==='rock' && r<.035) { g.fillStyle=rgb([128,128,120],(r2-.5)*30); g.fillRect(x+3,y+5,8,6); g.fillStyle='rgba(255,255,255,.15)'; g.fillRect(x+3,y+5,8,2); }
+      if (t==='grass2' && r>.965) { g.fillStyle=['#f4f0e0','#f2d04a','#e88aa8'][(r2*3)|0]; g.fillRect(x+6,y+6,3,3); }
+      break; }
+    case 'fieldG': case 'fieldW': {
+      if ((y/16|0)%2) { g.fillStyle=rgb(GC.soil,(r-.5)*10); g.fillRect(x,y,16,16); g.fillStyle=rgb(GC.soil,-16); g.fillRect(x+(r*12|0),y+6,3,2); }
+      else { const b=GC[t]; g.fillStyle=rgb(b,(r-.5)*16); g.fillRect(x,y,16,16); g.fillStyle=rgb(b,-22); g.fillRect(x+2,y+11,12,3); g.fillStyle=rgb(b,18); g.fillRect(x+(r2*12|0),y+3,2,5); }
+      break; }
+    case 'cobble': { g.fillStyle=rgb(GC.cobbleM,0); g.fillRect(x,y,16,16);
+      for (let i=0;i<4;i++) { const sx=x+(i&1)*8, sy=y+(i>>1)*8; g.fillStyle=rgb(GC.cobble,(h2(sx,sy)-.5)*26); g.fillRect(sx+1,sy+1,6,6); } break; }
+    case 'plaza': { g.fillStyle=rgb(GC.plazaM,0); g.fillRect(x,y,16,16); const gl=x%32===0?1:0, gt=y%32===0?1:0;
+      g.fillStyle=rgb(GC.plaza,(h2(x>>5,y>>5)-.5)*16+(r-.5)*4); g.fillRect(x+gl,y+gt,16-gl,16-gt); break; }
+    case 'road': case 'bridge': case 'quay': { const B=GC[t]; g.fillStyle=rgb(GC[t+'M'],0); g.fillRect(x,y,16,16); const row=y/16|0;
+      if (row&1) { g.fillStyle=rgb(B,(h2(x/16|0,row)-.5)*18); g.fillRect(x,y+1,7,14); g.fillStyle=rgb(B,(h2((x/16|0)+1,row)-.5)*18); g.fillRect(x+9,y+1,7,14); }
+      else { g.fillStyle=rgb(B,(h2(x/16|0,row+99)-.5)*18); g.fillRect(x+1,y+1,15,14); } break; }
+    case 'wood': { const row=y/16|0, off=((h2(row,9)*6)|0)*16, seg=Math.floor((x+off)/96);
+      g.fillStyle=rgb(GC.wood,(h2(row,seg)-.5)*28+(r-.5)*6); g.fillRect(x,y,16,14); g.fillStyle=rgb(GC.woodG,0); g.fillRect(x,y+14,16,2);
+      if ((x+off)%96===0) g.fillRect(x,y,1,14); if (r<.08) { g.fillStyle='rgba(0,0,0,.25)'; g.fillRect(x+3,y+6,2,2); } break; }
+    case 'concrete': case 'slip': { const b=GC[t]; g.fillStyle=rgb(b,(h2(x>>7,y>>7)-.5)*8+(r-.5)*2); g.fillRect(x,y,16,16);
+      g.fillStyle=rgb(b,-22); if (x%128===0) g.fillRect(x,y,1,16); if (y%128===0) g.fillRect(x,y,16,1);
+      if (r<.015) { g.fillStyle='rgba(40,35,30,.22)'; g.fillRect(x+2,y+4,11,7); } break; }
+    case 'sand': case 'dirt': { const b=GC[t]; g.fillStyle=rgb(b,(r-.5)*10); g.fillRect(x,y,16,16);
+      if (r2<.5) { g.fillStyle=rgb(b,-20); g.fillRect(x+(r*13|0),y+(r2*26|0)%13,2,2); } if (r2>.85) { g.fillStyle=rgb(b,16); g.fillRect(x+(r2*11|0),y+(r*13|0),2,2); } break; }
+    case 'sea': { const d=Math.min(1,Math.max(0,(y-W.shoreY(x))/1100)), s=GC.seaS, e=GC.seaD;
+      g.fillStyle=rgb([s[0]+(e[0]-s[0])*d, s[1]+(e[1]-s[1])*d, s[2]+(e[2]-s[2])*d],(r-.5)*5); g.fillRect(x,y,16,16); break; }
+    case 'canal': g.fillStyle=rgb(GC.canal,(r-.5)*5); g.fillRect(x,y,16,16); break;
+  }
+  // 水辺のふち（護岸・桟橋のへり）、橋の欄干
+  if (isWaterT(t) || t==='bridge') {
+    for (const [dx,dy,s] of [[0,-16,0],[0,16,1],[-16,0,2],[16,0,3]]) { const n=groundAt(x+8+dx,y+8+dy);
+      if (t==='bridge') { if (n!=='canal') continue; g.fillStyle='#d6cdb9';
+        if (s<2) g.fillRect(x, s?y+11:y+1, 16, 4); else g.fillRect(s===2?x+1:x+11, y, 4, 16);
+        if (r<.25) { g.fillStyle='#b9ae98'; s<2 ? g.fillRect(x+6, s?y+10:y, 5, 6) : g.fillRect(s===2?x:x+10, y+6, 6, 5); } continue; }
+      if (isWaterT(n)) continue; if (t==='sea' && n!=='wood' && n!=='slip' && n!=='concrete') continue; // 海岸線は別に描く
+      g.fillStyle = n==='wood' ? '#4a3220' : '#77716a';
+      if (s===0) { g.fillRect(x,y,16,4); g.fillStyle='rgba(0,0,0,.25)'; g.fillRect(x,y+4,16,8); }
+      else if (s===1) g.fillRect(x,y+12,16,4);
+      else if (s===2) { g.fillRect(x,y,4,16); g.fillStyle='rgba(0,0,0,.15)'; g.fillRect(x+4,y,5,16); }
+      else { g.fillRect(x+12,y,4,16); g.fillStyle='rgba(0,0,0,.15)'; g.fillRect(x+7,y,5,16); }
+      if (n==='wood' && r<.35) { g.fillStyle='#3a2616'; g.fillRect(x+6, s===0?y+4:y+6, 5, 5); } // 杭
+    }
+  }
+}
+const dockAtShore = x => W.docks.some(d => inR(d.r, x, W.shoreY(x)));
+function paintGround(g, X0, Y0){
+  const X1=X0+CH, Y1=Y0+CH, hit=r=>r[0]<X1&&r[0]+r[2]>X0&&r[1]<Y1&&r[1]+r[3]>Y0;
+  for (let y=Y0; y<Y1; y+=16) for (let x=X0; x<X1; x+=16) paintCell(g, x, y, groundAt(x+8, y+8));
+  // 丘の段々
+  const hill = W.areas.find(a=>a.id==='hill');
+  if (hill && hit(hill.r)) { for (let k=0;k<6;k++) { g.beginPath(); for (let x=X0-8; x<=X1+8; x+=16) { const y=2150+k*520+Math.sin(x*0.003+k)*40; x===X0-8?g.moveTo(x,y):g.lineTo(x,y); }
+      g.strokeStyle='rgba(40,70,30,.35)'; g.lineWidth=6; g.stroke(); g.strokeStyle='rgba(255,255,255,.08)'; g.lineWidth=2; g.translate(0,-4); g.stroke(); g.translate(0,4); } }
+  // 噴水広場の模様
+  const pz = W.grects.find(q=>q.g==='plaza'); if (pz && hit(pz.r)) { g.strokeStyle='rgba(110,98,84,.35)'; g.lineWidth=8;
+    for (const rr of [200,330,460]) { g.beginPath(); g.ellipse(8000,7550,rr,rr*0.75,0,0,Math.PI*2); g.stroke(); } }
+  // 船台のレール
+  for (const d of W.docks) if (d.g==='slip' && hit(d.r)) { const [sx,sy,,sh]=d.r; g.fillStyle='#4f5359';
+    for (let yy=sy; yy<sy+sh; yy+=26) g.fillRect(sx+130, yy, 200, 5); g.fillStyle='#8b9098'; g.fillRect(sx+150, sy, 6, sh); g.fillRect(sx+304, sy, 6, sh); }
+  // 海岸線：岬は砂浜、町は石の岸壁
+  if (Y1 > 12500) for (const beach of [true,false]) { g.beginPath(); let pen=false;
+    for (let x=X0-16; x<=X1+16; x+=8) { if ((x<2900)!==beach || dockAtShore(x)) { pen=false; continue; } const y=W.shoreY(x); pen?g.lineTo(x,y):g.moveTo(x,y); pen=true; }
+    g.lineCap='round'; g.strokeStyle=beach?'#ccbb8a':'#7b7468'; g.lineWidth=14; g.stroke(); g.strokeStyle=beach?'rgba(255,255,255,.22)':'#aea596'; g.lineWidth=5; g.translate(0,-3); g.stroke(); g.translate(0,3); }
+  // 網
+  for (const n of W.gdecor) if (n.k==='net' && hit([n.x-n.r,n.y-n.r,n.r*2,n.r*2])) { g.save(); g.beginPath(); g.ellipse(n.x,n.y,n.r,n.r*0.6,0.3,0,Math.PI*2); g.clip();
+    g.fillStyle='rgba(70,90,80,.25)'; g.fill(); g.strokeStyle='rgba(50,60,50,.6)'; g.lineWidth=1; g.beginPath();
+    for (let k=-n.r*2; k<n.r*2; k+=7) { g.moveTo(n.x+k,n.y-n.r); g.lineTo(n.x+k+n.r,n.y+n.r); g.moveTo(n.x+k,n.y+n.r); g.lineTo(n.x+k+n.r,n.y-n.r); } g.stroke(); g.restore();
+    g.fillStyle='#e8892e'; for (let a=0;a<6;a++) g.fillRect(n.x+Math.cos(a)*n.r*0.9-2, n.y+Math.sin(a)*n.r*0.55-2, 4, 4); }
+  // 建物・木の影
+  g.fillStyle='rgba(0,0,0,.2)';
+  for (const o of hQuery(W.hash, X0-200, Y0-60, X1+60, Y1+60)) {
+    if (o.k==='tree') { g.beginPath(); g.ellipse(o.x+24, o.y+9, o.r*0.95, o.r*0.42, 0, 0, Math.PI*2); g.fill(); continue; }
+    if (o.k==='lh') { g.beginPath(); g.moveTo(o.x+o.w*0.3,o.y+o.h*0.6); g.lineTo(o.x+o.w+150,o.y+o.h*0.6+60); g.lineTo(o.x+o.w+170,o.y+o.h*0.6+90); g.lineTo(o.x+o.w*0.7,o.y+o.h*0.7); g.fill(); }
+    const ht = Math.max(o.ht, o.k==='stall'?40:0); if (ht < 10) continue; const s=Math.min(60, ht*0.45);
+    g.beginPath(); g.moveTo(o.x+o.w, o.y-ht*0.2); g.lineTo(o.x+o.w+s, o.y+s*0.3); g.lineTo(o.x+o.w+s, o.y+o.h+s*0.25); g.lineTo(o.x+s*0.5, o.y+o.h+s*0.25); g.lineTo(o.x, o.y+o.h); g.closePath(); g.fill(); }
+  for (const rf of W.lateRoofs) if (hit([rf.x,rf.y,rf.w+80,rf.h+60])) { g.fillStyle='rgba(0,0,0,.18)'; g.fillRect(rf.x,rf.y,rf.w,rf.h); g.fillRect(rf.x+rf.w,rf.y+20,50,rf.h); }
+}
+function getChunk(ix,iy){ const key=ix+iy*1000; let c=W.chunks.get(key);
+  if (c) { W.chunks.delete(key); W.chunks.set(key,c); return c; }
+  if (chunkBudget-- <= 0) return null;
+  const sc = Math.min(2, devicePixelRatio||1); c = document.createElement('canvas'); c.width = c.height = Math.ceil(CH*sc);
+  const g = c.getContext('2d'); g.scale(sc,sc); g.translate(-ix*CH,-iy*CH); paintGround(g, ix*CH, iy*CH);
+  W.chunks.set(key,c); while (W.chunks.size > chunkMax) W.chunks.delete(W.chunks.keys().next().value);
+  return c; }
+// ---- 水の動き（毎フレーム、画面内だけ） ----
+function drawWater(cx,cy,Wd,Hd,t){
+  if (cy+Hd > 9900) { // 運河と海の小さな波
+    ctx.strokeStyle='rgba(255,255,255,.17)'; ctx.lineWidth=2; ctx.beginPath(); const G=110;
+    for (let gy=Math.floor(cy/G)*G; gy<cy+Hd+G; gy+=G) for (let gx=Math.floor(cx/G)*G; gx<cx+Wd+G; gx+=G) {
+      const r=h2(gx,gy), px=gx+r*G+Math.sin(t*0.6+r*20)*14, py=gy+h2(gy,gx)*G+Math.sin(t*0.9+r*9)*3;
+      if (py > W.shoreY(px) && py < W.shoreY(px)+40) continue; if (!wetAt(px,py)) continue;
+      const w=9+Math.sin(t*1.2+r*30)*5; ctx.moveTo(px-w,py); ctx.quadraticCurveTo(px,py-5,px+w,py); }
+    ctx.stroke(); }
+  if (cy+Hd > 12500) { // 波打ち際（寄せては返す）
+    for (let k=0;k<3;k++) { ctx.beginPath(); let pen=false;
+      for (let x=Math.floor(cx/8)*8-8; x<=cx+Wd+8; x+=8) { if (dockAtShore(x)) { pen=false; continue; }
+        const y=W.shoreY(x)+7+k*13+Math.sin(t*1.6-k*0.8+x*0.012)*4+(k?Math.sin(t*0.9+x*0.004+k)*6:0); pen?ctx.lineTo(x,y):ctx.moveTo(x,y); pen=true; }
+      ctx.strokeStyle = ['rgba(255,255,255,.6)','rgba(255,255,255,.3)','rgba(255,255,255,.14)'][k]; ctx.lineWidth = 4-k; ctx.stroke(); } }
+}
+// ---- 建物・小物 ----
+function boxFace(o, cTop, cFront){ const {x,y,w,h,ht}=o; ctx.fillStyle=cFront; ctx.fillRect(x,y+h-ht,w,ht); ctx.fillStyle=cTop; ctx.fillRect(x,y-ht,w,h); }
+function drawBld(o){ const {x,y,w,h,ht}=o, fy=y+h-ht;
+  ctx.fillStyle=o.cW; ctx.fillRect(x,fy,w,ht); ctx.fillStyle=o.cWd; ctx.fillRect(x,y+h-6,w,6);
+  const floors=Math.max(1,Math.floor((ht-8)/30)), cols=Math.max(1,Math.floor((w-12)/34)), gap=(w-cols*14)/(cols+1), doorC=o.door?Math.floor(cols/2):-1;
+  for (let f=0; f<floors; f++) { const wy=fy+8+f*30;
+    for (let c=0; c<cols; c++) { if (f===floors-1 && c===doorC) continue; const wx=x+gap+c*(14+gap);
+      ctx.fillStyle=o.cWd; ctx.fillRect(wx-2,wy-2,18,20); ctx.fillStyle=((o.seed>>((c+f*3)%28))&7)===0?'#f1d27a':'#3d5a73'; ctx.fillRect(wx,wy,14,16);
+      ctx.fillStyle='rgba(255,255,255,.25)'; ctx.fillRect(wx,wy,14,3); } }
+  if (o.door) { const dx=x+gap+doorC*(14+gap)-2; ctx.fillStyle='#5a3b26'; ctx.fillRect(dx,y+h-28,18,22); ctx.fillStyle=o.cWd; ctx.fillRect(dx-2,y+h-30,22,2); }
+  if (o.awn) { const ay=y+h-40; for (let i=0; i<w-8; i+=12) { ctx.fillStyle=(i/12)%2?'#f3efe6':o.awn; ctx.fillRect(x+4+i,ay,Math.min(12,w-8-i),9); } ctx.fillStyle='rgba(0,0,0,.18)'; ctx.fillRect(x+4,ay+9,w-8,3); }
+  const rx=x-4, rw=w+8, ry=y-ht-4, rh=h+4;
+  if (o.flat) { ctx.fillStyle=o.cRl; ctx.fillRect(x,y-ht,w,h); ctx.strokeStyle=o.cRd; ctx.lineWidth=4; ctx.strokeRect(x+2,y-ht+2,w-4,h-4);
+    ctx.fillStyle=o.cRline; ctx.fillRect(x+w*0.6,y-ht+h*0.3,18,14); return; }
+  const mid=ry+rh*0.45;
+  ctx.fillStyle=o.cRl; ctx.fillRect(rx,ry,rw,mid-ry); ctx.fillStyle=o.cRd; ctx.fillRect(rx,mid,rw,ry+rh-mid);
+  ctx.strokeStyle=o.cRline; ctx.lineWidth=1; ctx.globalAlpha*=0.6; ctx.beginPath();
+  for (let yy=ry+7; yy<ry+rh-2; yy+=7) { ctx.moveTo(rx,yy); ctx.lineTo(rx+rw,yy); }
+  for (let xx=rx+5; xx<rx+rw; xx+=10) { ctx.moveTo(xx,ry); ctx.lineTo(xx,ry+rh); } ctx.stroke(); ctx.globalAlpha/=0.6;
+  ctx.fillStyle=o.cRline; ctx.fillRect(rx,mid-2,rw,4); ctx.fillRect(rx,ry+rh-3,rw,3);
+  ctx.fillStyle='rgba(0,0,0,.12)'; ctx.fillRect(rx+rw-6,ry,6,rh);
+  if (o.chim) { const cx=x+w*0.7; ctx.fillStyle='#8a6a5a'; ctx.fillRect(cx,ry+4,14,22); ctx.fillStyle='#5e463b'; ctx.fillRect(cx-2,ry+2,18,5); }
+}
+function drawWh(o){ const {x,y,w,h,ht}=o, fy=y+h-ht, dh=Math.min(52,ht-14);
+  ctx.fillStyle=o.cW; ctx.fillRect(x,fy,w,ht); ctx.strokeStyle=o.cWd; ctx.lineWidth=1; ctx.beginPath(); for (let xx=x+3; xx<x+w; xx+=6) { ctx.moveTo(xx,fy); ctx.lineTo(xx,y+h); } ctx.stroke();
+  const n=Math.max(1,Math.floor(w/180)); for (let i=0;i<n;i++) { const dx=x+(i+0.5)*w/n-32; ctx.fillStyle='#5d6166'; ctx.fillRect(dx,y+h-dh,64,dh); ctx.fillStyle='rgba(255,255,255,.12)'; for (let yy=y+h-dh; yy<y+h; yy+=6) ctx.fillRect(dx,yy,64,2); }
+  ctx.fillStyle='#3d5a73'; for (let xx=x+14; xx<x+w-30; xx+=46) ctx.fillRect(xx,fy+8,30,9);
+  ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fillRect(x,y+h-4,w,4);
+  ctx.fillStyle=o.cRl; ctx.fillRect(x-3,y-ht-3,w+6,h+3); ctx.strokeStyle=o.cRd; ctx.beginPath(); for (let xx=x+6; xx<x+w; xx+=10) { ctx.moveTo(xx,y-ht); ctx.lineTo(xx,y+h-ht); } ctx.stroke();
+  ctx.fillStyle=o.cRd; ctx.fillRect(x-3,y-ht+h*0.5-2,w+6,4); ctx.fillRect(x-3,y+h-ht-3,w+6,3);
+  ctx.fillStyle='rgba(170,210,230,.55)'; for (let xx=x+30; xx<x+w-40; xx+=90) ctx.fillRect(xx,y-ht+h*0.15,28,h*0.25);
+}
+function drawCont(o){ const {x,y,w,h}=o;
+  for (let i=0;i<o.n;i++) { const fy=y+h-44*(i+1); ctx.fillStyle=o.cs[i]; ctx.fillRect(x,fy,w,44); ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.lineWidth=1; ctx.beginPath();
+    for (let xx=x+4; xx<x+w; xx+=7) { ctx.moveTo(xx,fy+3); ctx.lineTo(xx,fy+41); } ctx.stroke();
+    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(x,fy,w,3); ctx.fillRect(x,fy+41,w,3); ctx.fillRect(x,fy,3,44); ctx.fillRect(x+w-3,fy,3,44); }
+  const ty=y-44*o.n; ctx.fillStyle=o.ct; ctx.fillRect(x,ty,w,h); ctx.strokeStyle='rgba(0,0,0,.15)'; ctx.lineWidth=1; ctx.beginPath();
+  for (let xx=x+6; xx<x+w; xx+=12) { ctx.moveTo(xx,ty+2); ctx.lineTo(xx,ty+h-2); } ctx.stroke(); ctx.strokeStyle='rgba(0,0,0,.3)'; ctx.lineWidth=2; ctx.strokeRect(x+1,ty+1,w-2,h-2); }
+function drawTree(o){ const cx=o.x+10, cy=o.y+7, r=o.r, c=o.c;
+  ctx.fillStyle='#5b3d24'; ctx.fillRect(cx-4,cy-34,8,34);
+  ctx.fillStyle=c[0]; ctx.beginPath(); ctx.arc(cx,cy-62,r,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c[1]; ctx.beginPath(); ctx.arc(cx-r*.18,cy-62-r*.18,r*.78,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c[2]; ctx.beginPath(); ctx.arc(cx-r*.35,cy-62-r*.4,r*.42,0,Math.PI*2); ctx.fill(); }
+function drawCrate(o){ const {x,y,w,h,ht}=o, fy=y+h-ht; ctx.fillStyle=o.cd; ctx.fillRect(x,fy,w,ht); ctx.strokeStyle='rgba(0,0,0,.3)'; ctx.lineWidth=2; ctx.strokeRect(x+1,fy+1,w-2,ht-2);
+  if (!o.ice) { ctx.beginPath(); ctx.moveTo(x+2,fy+2); ctx.lineTo(x+w-2,y+h-2); if (ht>40) { ctx.moveTo(x,fy+ht/2); ctx.lineTo(x+w,fy+ht/2); } ctx.stroke(); }
+  ctx.fillStyle=o.col; ctx.fillRect(x,y-ht,w,h); ctx.strokeRect(x+1,y-ht+1,w-2,h-2);
+  if (o.ice) { ctx.fillStyle='#9fb3bd'; ctx.beginPath(); ctx.ellipse(x+w/2,y-ht+h/2,10,4,0.3,0,Math.PI*2); ctx.fill(); } }
+function drawBarrel(o){ const cx=o.x+o.w/2, rx=o.w/2, ry=o.h*0.3, by=o.y+o.h, ty=by-ry-o.ht;
+  ctx.fillStyle='#7a4a28'; ctx.fillRect(cx-rx,ty,2*rx,o.ht); ctx.beginPath(); ctx.ellipse(cx,by-ry,rx,ry,0,0,Math.PI); ctx.fill();
+  ctx.fillStyle='#3e3a36'; ctx.fillRect(cx-rx,ty+6,2*rx,3); ctx.fillRect(cx-rx,ty+o.ht-8,2*rx,3);
+  ctx.fillStyle='#a06a3a'; ctx.beginPath(); ctx.ellipse(cx,ty,rx,ry,0,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#3e3a36'; ctx.lineWidth=2; ctx.stroke(); }
+function drawRock(o){ const cx=o.x+o.w/2, by=o.y+o.h;
+  ctx.fillStyle='#74766c'; ctx.beginPath(); ctx.ellipse(cx,by-o.ht*0.5-o.h*0.3,o.w/2+2,o.ht*0.5+o.h*0.4,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#9a9b90'; ctx.beginPath(); ctx.ellipse(cx-o.w*0.1,by-o.ht-o.h*0.25,o.w*0.36,o.h*0.33,-0.2,0,Math.PI*2); ctx.fill(); }
+function drawFountain(o,t){ const cx=o.x+o.w/2, cy=o.y+o.h/2, rx=o.w/2, ry=o.h/2, ht=o.ht;
+  ctx.fillStyle='#8f8676'; ctx.fillRect(cx-rx,cy-ht,rx*2,ht); ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI); ctx.fill();
+  ctx.fillStyle='#c2b8a6'; ctx.beginPath(); ctx.ellipse(cx,cy-ht,rx,ry,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#4c9fbf'; ctx.beginPath(); ctx.ellipse(cx,cy-ht,rx-12,ry-10,0,0,Math.PI*2); ctx.fill();
+  const k=(t*0.5)%1; ctx.strokeStyle=`rgba(255,255,255,${0.5*(1-k)})`; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(cx,cy-ht,(rx-14)*k+10,((ry-12)*k+7),0,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#b0a694'; ctx.fillRect(cx-8,cy-ht-44,16,44); ctx.fillStyle='#c9bfac'; ctx.beginPath(); ctx.ellipse(cx,cy-ht-44,26,9,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(225,245,255,.8)'; ctx.lineWidth=2; ctx.beginPath(); const j=Math.sin(t*6)*2;
+  for (const s of [-1,1]) { ctx.moveTo(cx+s*6,cy-ht-50); ctx.quadraticCurveTo(cx+s*30,cy-ht-70+j,cx+s*42,cy-ht-6); } ctx.stroke(); }
+function drawStall(o){ const {x,y,w,h,ht}=o; ctx.fillStyle='#7a5536'; ctx.fillRect(x,y+h-ht,w,ht); ctx.fillStyle='#a47b52'; ctx.fillRect(x,y-ht,w,h);
+  ctx.fillStyle='#b8c4cc'; for (let i=0;i<4;i++) { ctx.beginPath(); ctx.ellipse(x+22+i*(w-44)/3,y-ht+h/2,12,4,0,0,Math.PI*2); ctx.fill(); }
+  ctx.fillStyle='#4a3b2e'; ctx.fillRect(x+2,y+h-ht-40,3,40); ctx.fillRect(x+w-5,y+h-ht-40,3,40);
+  const ay=y+h-ht-62; for (let i=0; i<w+12; i+=16) { ctx.fillStyle=(i/16)%2?'#f3efe6':o.col; ctx.fillRect(x-6+i,ay,Math.min(16,w+12-i),22); }
+  ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(x-6,ay+18,w+12,4); }
+function drawLh(o){ const cx=o.x+o.w/2; boxFace(o,'#a9a598','#8a877c');
+  const tb=o.y+o.h*0.6-24, top=tb-250, wAt=f=>46-16*f, yAt=f=>tb-250*f;
+  for (let i=0;i<5;i++) { const f0=i/5, f1=(i+1)/5; ctx.fillStyle=i%2?'#c8402e':'#f2f0ea'; ctx.beginPath();
+    ctx.moveTo(cx-wAt(f0),yAt(f0)); ctx.lineTo(cx+wAt(f0),yAt(f0)); ctx.lineTo(cx+wAt(f1),yAt(f1)); ctx.lineTo(cx-wAt(f1),yAt(f1)); ctx.fill(); }
+  ctx.fillStyle='rgba(0,0,0,.16)'; ctx.beginPath(); ctx.moveTo(cx+14,tb); ctx.lineTo(cx+46,tb); ctx.lineTo(cx+30,top); ctx.lineTo(cx+9,top); ctx.fill();
+  ctx.fillStyle='#3a2a22'; ctx.fillRect(cx-9,tb-26,18,26); ctx.fillStyle='#2f3a48'; for (const f of [.3,.55,.8]) ctx.fillRect(cx-4,yAt(f)-8,8,12);
+  ctx.fillStyle='#3a3d44'; ctx.fillRect(cx-42,top-6,84,8); ctx.fillStyle='#fff1a8'; ctx.fillRect(cx-22,top-40,44,34);
+  ctx.fillStyle='#3a3d44'; for (const dx of [-22,-8,6,20]) ctx.fillRect(cx+dx,top-40,2,34);
+  ctx.fillStyle='#c8402e'; ctx.beginPath(); ctx.arc(cx,top-40,25,Math.PI,0); ctx.fill(); ctx.fillRect(cx-2,top-78,4,14); }
+function drawObj(o,t){
+  switch (o.k) {
+    case 'bld': return drawBld(o); case 'wh': return drawWh(o); case 'cont': return drawCont(o); case 'tree': return drawTree(o);
+    case 'crate': return drawCrate(o); case 'barrel': return drawBarrel(o); case 'rock': return drawRock(o); case 'fountain': return drawFountain(o,t);
+    case 'stall': return drawStall(o); case 'lh': return drawLh(o);
+    case 'pillar': boxFace(o,'#8a7862','#6d5d4b'); ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(o.x+3,o.y+o.h-o.ht,4,o.ht); return;
+    case 'timber': { boxFace(o,'#916b42','#7d5c38'); ctx.fillStyle='#c9a46e'; for (let xx=o.x+8; xx<o.x+o.w-4; xx+=14) { ctx.beginPath(); ctx.arc(xx,o.y+o.h-10,6,0,Math.PI*2); ctx.fill(); } return; }
+    case 'scaf': { const {x,y,w,h,ht}=o; ctx.fillStyle='#5a4630'; for (let yy=y; yy<y+h; yy+=70) ctx.fillRect(x+2,yy-ht,4,ht+8);
+      ctx.fillStyle='#b08a55'; ctx.fillRect(x,y-ht,w,h); ctx.strokeStyle='rgba(60,40,20,.45)'; ctx.lineWidth=1; ctx.beginPath(); for (let yy=y-ht+8; yy<y+h-ht; yy+=9) { ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); } ctx.stroke();
+      ctx.fillStyle='#6e5435'; ctx.fillRect(x,y+h-ht,w,ht); return; }
+    case 'keel': return boxFace(o,'#7a5432','#5a3c22');
+  }
+}
+function drawDeco(d,t){
+  switch (d.k) {
+    case 'lamp': { const {x,y}=d; ctx.fillStyle='#2e3138'; ctx.fillRect(x-2,y-64,4,64); ctx.fillRect(x-5,y-4,10,4); ctx.fillStyle='#3a3d44'; ctx.fillRect(x-7,y-76,14,12);
+      ctx.fillStyle='#ffe9a8'; ctx.fillRect(x-5,y-74,10,8); ctx.fillStyle='#2e3138'; ctx.fillRect(x-8,y-78,16,3); return; }
+    case 'boat': { const bob=Math.sin(t*1.3+d.ph)*1.6, L=d.len/2; ctx.save(); ctx.translate(d.x,d.y+bob); if (d.v) ctx.rotate(Math.PI/2);
+      ctx.strokeStyle=`rgba(255,255,255,${0.2+Math.sin(t*1.3+d.ph)*0.08})`; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(0,2,L+10,20,0,0,Math.PI*2); ctx.stroke();
+      const hull=(s)=>{ ctx.beginPath(); ctx.moveTo(-L*s,-14*s); ctx.lineTo((L-18)*s,-14*s); ctx.quadraticCurveTo((L+8)*s,-12*s,(L+10)*s,0); ctx.quadraticCurveTo((L+6)*s,12*s,(L-18)*s,14*s); ctx.lineTo(-L*s,14*s); ctx.quadraticCurveTo(-(L+4)*s,0,-L*s,-14*s); };
+      ctx.fillStyle='rgba(0,0,0,.25)'; ctx.save(); ctx.translate(4,8); hull(1); ctx.fill(); ctx.restore();
+      ctx.fillStyle=d.c; hull(1); ctx.fill(); ctx.fillStyle='#b88a58'; hull(0.78); ctx.fill();
+      ctx.strokeStyle='rgba(90,60,30,.5)'; ctx.lineWidth=1; ctx.beginPath(); for (let k=-L*0.7; k<L*0.7; k+=8) { ctx.moveTo(k,-9); ctx.lineTo(k,9); } ctx.stroke();
+      if (d.cab) { ctx.fillStyle='#f0ece2'; ctx.fillRect(-L*0.35,-10,L*0.55,20); ctx.fillStyle='#3d5a73'; ctx.fillRect(-L*0.35+4,-6,L*0.55-8,5); ctx.fillStyle='rgba(0,0,0,.15)'; ctx.fillRect(-L*0.35,6,L*0.55,4); }
+      ctx.restore(); return; }
+    case 'gantry': { const cx=d.x, gy=d.y, H=210; ctx.save();
+      const leg=(lx,ly)=>{ ctx.fillStyle='#d6a52a'; ctx.fillRect(lx-7,ly-H,14,H); ctx.fillStyle='#a87f1c'; ctx.fillRect(lx+3,ly-H,4,H); ctx.fillStyle='#3a3d44'; ctx.fillRect(lx-12,ly-8,24,8); };
+      leg(cx-230,gy); leg(cx+230,gy);
+      ctx.fillStyle='#e8b83a'; ctx.fillRect(cx-270,gy-H-18,540,14); for (const ex of [cx-270,cx+256]) ctx.fillRect(ex,gy-H-18,14,100); ctx.fillStyle='#b88a1e'; ctx.fillRect(cx-270,gy+100-H-18,540,18);
+      ctx.strokeStyle='rgba(0,0,0,.25)'; ctx.lineWidth=2; ctx.beginPath(); for (let xx=cx-260; xx<cx+270; xx+=30) { ctx.moveTo(xx,gy+100-H-18); ctx.lineTo(xx+15,gy+100-H); } ctx.stroke();
+      const tx=cx+Math.sin(t*0.25+d.ph)*170; ctx.fillStyle='#5b5f66'; ctx.fillRect(tx-22,gy-H+10,44,34);
+      ctx.strokeStyle='#2a2d33'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(tx-8,gy-H+44); ctx.lineTo(tx-8,gy-40); ctx.moveTo(tx+8,gy-H+44); ctx.lineTo(tx+8,gy-40); ctx.stroke();
+      ctx.fillStyle='#3a3d44'; ctx.fillRect(tx-30,gy-42,60,8);
+      leg(cx-230,gy+100); leg(cx+230,gy+100); ctx.restore(); return; }
+    case 'tcrane': { const {x,y}=d, H=330, L=420; ctx.strokeStyle='#d0532e'; ctx.lineWidth=3; ctx.beginPath();
+      ctx.moveTo(x-10,y); ctx.lineTo(x-10,y-H); ctx.moveTo(x+10,y); ctx.lineTo(x+10,y-H); for (let yy=y; yy>y-H; yy-=24) { ctx.moveTo(x-10,yy); ctx.lineTo(x+10,yy-24); }
+      ctx.moveTo(x+110,y-H); ctx.lineTo(x-L,y-H); ctx.moveTo(x+110,y-H-12); ctx.lineTo(x-L,y-H-6); for (let xx=x-L; xx<x+110; xx+=22) { ctx.moveTo(xx,y-H); ctx.lineTo(xx+11,y-H-10); }
+      ctx.moveTo(x,y-H-60); ctx.lineTo(x-L,y-H-6); ctx.moveTo(x,y-H-60); ctx.lineTo(x+110,y-H-12); ctx.stroke();
+      ctx.fillStyle='#5b5f66'; ctx.fillRect(x+80,y-H-4,34,26); ctx.fillStyle='#e9e2d0'; ctx.fillRect(x-14,y-H+4,28,22); ctx.fillStyle='#3d5a73'; ctx.fillRect(x-10,y-H+8,20,8);
+      const hx=x-160-Math.sin(t*0.2+d.ph)*110; ctx.strokeStyle='#2a2d33'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(hx,y-H); ctx.lineTo(hx,y-150); ctx.stroke();
+      ctx.fillStyle='#d6a52a'; ctx.fillRect(hx-8,y-152,16,10); return; }
+    case 'rib': { const {x,y,half}=d, top=y-100; ctx.strokeStyle='#7a5432'; ctx.lineWidth=7; ctx.lineCap='round'; ctx.beginPath();
+      ctx.moveTo(x-half,top); ctx.bezierCurveTo(x-half,y-26,x-24,y-14,x,y-14); ctx.bezierCurveTo(x+24,y-14,x+half,y-26,x+half,top); ctx.stroke();
+      ctx.strokeStyle='rgba(255,230,190,.18)'; ctx.lineWidth=2; ctx.stroke(); return; }
+  }
+}
+function drawRoof(r, me){ const inside = me && me.x>r.x && me.x<r.x+r.w && me.y>r.y && me.y<r.y+r.h; // 中に入ると屋根が透ける
+  const {x,y,w,h,ht}=r, ty=y-ht; ctx.save(); ctx.globalAlpha = inside ? 0.25 : 1;
+  ctx.fillStyle='#9c5f3e'; ctx.fillRect(x,ty,w,h); ctx.fillStyle='#b8754f'; ctx.fillRect(x,ty,w,h*0.42);
+  ctx.strokeStyle='rgba(60,30,20,.3)'; ctx.lineWidth=1; ctx.beginPath(); for (let yy=ty+8; yy<ty+h; yy+=8) { ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); } for (let xx=x+6; xx<x+w; xx+=12) { ctx.moveTo(xx,ty); ctx.lineTo(xx,ty+h); } ctx.stroke();
+  ctx.fillStyle='rgba(180,220,235,.7)'; ctx.fillRect(x+40,ty+h*0.42-14,w-80,12); ctx.fillStyle='#6e3f28'; ctx.fillRect(x,ty+h*0.42-2,w,3); ctx.fillRect(x,ty+h-4,w,4);
+  ctx.fillStyle='#5a3a24'; ctx.fillRect(x,y+h-ht,w,16);
+  const sx=x+w/2; ctx.fillStyle='#f3e6c4'; ctx.fillRect(sx-120,y+h-ht-8,240,32); ctx.strokeStyle='#5a3a24'; ctx.lineWidth=3; ctx.strokeRect(sx-120,y+h-ht-8,240,32);
+  ctx.fillStyle='#3a2a1a'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center'; ctx.fillText(r.label,sx,y+h-ht+15);
+  ctx.restore(); return inside; }
+let curArea = null, areaToast = null;
 function drawPlayer(v){
   const { p, x, y, ax, ay, mine, ally } = v;
   ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y, p.down?19:11, p.down?6:4, 0, 0, Math.PI*2); ctx.fill();
@@ -459,22 +922,28 @@ function drawLabel(v){
 }
 
 function draw(me){
+  const M = world();
   const W=innerWidth, H=innerHeight;
   const mp = state.players.find(p=>p.id===myId);
   let cam = me || { x:MAP/2, y:MAP/2 };
   if (mp && mp.out) { const m = state.players.find(q=>!q.out && teamOf(q.slot)===teamOf(mp.slot)); if (m) cam = { x:isHost?m.x:m.dx, y:isHost?m.y:m.dy }; } // 脱落後は味方を観戦
-  const cx=cam.x-W/2, cy=cam.y-BODY_H-H/2; // 体の中心が画面の真ん中に来るように
-  ctx.fillStyle='#1a2a1e'; ctx.fillRect(0,0,W,H);
+  const cx=Math.round(cam.x-W/2), cy=Math.round(cam.y-BODY_H-H/2); // 体の中心が画面の真ん中に来るように
+  const t = performance.now()/1000;
+  ctx.fillStyle='#1d3524'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.translate(-cx,-cy);
-  ctx.fillStyle='#24402b'; ctx.fillRect(0,0,MAP,MAP);
-  ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.beginPath();
-  for (let g=0; g<=MAP; g+=100){ ctx.moveTo(g,0); ctx.lineTo(g,MAP); ctx.moveTo(0,g); ctx.lineTo(MAP,g); } ctx.stroke();
-  ctx.strokeStyle='#6b5'; ctx.lineWidth=4; ctx.strokeRect(0,0,MAP,MAP);
+  // 地面（チャンク）。まだ描いていない板は1フレームに少しずつ作る
+  chunkBudget = 3; chunkMax = (Math.ceil(W/CH)+2)*(Math.ceil(H/CH)+2)+12;
+  for (let iy=Math.floor(cy/CH); iy<=Math.floor((cy+H)/CH); iy++) for (let ix=Math.floor(cx/CH); ix<=Math.floor((cx+W)/CH); ix++) {
+    if (ix<0||iy<0||ix*CH>=MAP||iy*CH>=MAP) continue; const c=getChunk(ix,iy);
+    if (c) ctx.drawImage(c, ix*CH, iy*CH, CH, CH); else { ctx.fillStyle='#4f7a3a'; ctx.fillRect(ix*CH, iy*CH, CH, CH); } }
+  drawWater(cx,cy,W,H,t);
   // 弾の影（地面）
   ctx.fillStyle='rgba(0,0,0,.25)'; for (const b of state.bullets){ ctx.beginPath(); ctx.ellipse(b.x,b.y,2.5,1.2,0,0,Math.PI*2); ctx.fill(); }
   const myTeam = mp ? teamOf(mp.slot) : -1;
-  // 手前（画面の下）にあるものほど後から描く
-  const list = OBS.map(o => ({ k:o.y+o.h, o }));
+  // 画面内の建物・小物だけ取り出して、手前（画面の下）にあるものほど後から描く
+  const objs = hQuery(M.hash, cx-120, cy-40, cx+W+120, cy+H+380);
+  const decs = hQuery(M.dhash, cx-120, cy-40, cx+W+120, cy+H+380);
+  const list = objs.map(o => ({ k:o.y+o.h, o })).concat(decs.map(d => ({ k:d.key, d })));
   const vis = [];
   for (const p of state.players) {
     if (p.out) continue;
@@ -487,16 +956,31 @@ function draw(me){
     vis.push(v); list.push({ k:y, v });
   }
   list.sort((a,b)=>a.k-b.k);
-  for (const it of list) { if (it.o) drawBlock(it.o); else drawPlayer(it.v); }
-  // 壁の裏に隠れた自分・味方はシルエットで見せる（敵は見えない）
-  for (const v of vis) { if (!v.mine && !v.ally) continue;
-    if (OBS.some(o => o.y+o.h > v.y && v.x+14 > o.x && v.x-14 < o.x+o.w && v.y > o.y-WALL_H && v.y-SPRITE_H*CHAR_SCALE < o.y+o.h)) {
+  for (const it of list) { if (it.o) drawObj(it.o,t); else if (it.d) drawDeco(it.d,t); else drawPlayer(it.v); }
+  // 大きな屋根（魚市場）。中にいると透ける
+  const occ = objs.filter(o => o.top > 24);
+  for (const r of M.lateRoofs) if (r.x < cx+W && r.x+r.w > cx && r.y-r.ht < cy+H && r.y+r.h > cy) { if (!drawRoof(r, me)) occ.push(r); }
+  // 灯台の光
+  if (M.lh && Math.abs(M.lh.x-cam.x) < 2500 && Math.abs(M.lh.y-cam.y) < 2500) { const lx=M.lh.x+M.lh.w/2, ly=M.lh.y+M.lh.h*0.6-24-273;
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle='rgba(255,240,180,.09)';
+    for (const s of [0, Math.PI]) { const a=t*0.7+s; ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(lx+Math.cos(a-0.1)*900, ly+Math.sin(a-0.1)*500); ctx.lineTo(lx+Math.cos(a+0.1)*900, ly+Math.sin(a+0.1)*500); ctx.fill(); }
+    ctx.fillStyle='rgba(255,240,180,.35)'; ctx.beginPath(); ctx.arc(lx,ly,18,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+  // 建物・木・屋根の裏に隠れているか（自分・味方はシルエットで見せる。敵は名前も出さない）
+  const hidden = v => { const x0=v.x-10, x1=v.x+10, y0=v.y-SPRITE_H*CHAR_SCALE, y1=v.y;
+    return occ.some(o => (o.ht!==undefined && o.k ? o.y+o.h > v.y : true) && x1>o.ib[0] && x0<o.ib[0]+o.ib[2] && y1>o.ib[1] && y0<o.ib[1]+o.ib[3]); };
+  for (const v of vis) { v.hid = hidden(v); if (v.hid && (v.mine || v.ally)) {
       ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true); ctx.restore(); } }
   // 弾（体の高さ）
   ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,2.5,0,Math.PI*2); ctx.fill(); }
   // 名前・体力（いちばん上に）
-  for (const v of vis) drawLabel(v);
+  for (const v of vis) if (!v.hid || v.mine || v.ally) drawLabel(v);
   ctx.restore();
+  // いまいるエリアの名前
+  const ar = areaAt(cam.x, cam.y);
+  if (ar && ar.id !== curArea) { curArea = ar.id; areaToast = { name: ar.name, at: t }; }
+  if (areaToast && t-areaToast.at < 3) { const a = Math.min(1, (3-(t-areaToast.at))*1.5, (t-areaToast.at)*4);
+    ctx.save(); ctx.globalAlpha=a; ctx.textAlign='center'; ctx.font='bold 26px sans-serif'; ctx.lineWidth=5; ctx.strokeStyle='rgba(0,0,0,.6)';
+    ctx.strokeText(areaToast.name, W/2, 82); ctx.fillStyle='#fff6dc'; ctx.fillText(areaToast.name, W/2, 82); ctx.restore(); }
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
@@ -522,6 +1006,7 @@ $('btnHost').onclick = () => { msg('部屋を作成中…'); startHost(); };
 $('btnJoin').onclick = () => { msg('接続中…'); startJoin(); };
 $('btnStart').onclick = hostStartMatch;
 $('btnLobby').onclick = hostBackToLobby;
+buildWorld('soltia');
 </script>
 </body>
 </html>
