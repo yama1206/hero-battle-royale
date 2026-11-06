@@ -156,9 +156,10 @@ function readInput(me){
     if ((gp.buttons[7]&&gp.buttons[7].value>0.3) || (gp.buttons[5]&&gp.buttons[5].pressed)) { fire=true; assist=true; }
     if (gp.buttons[2]&&gp.buttons[2].pressed) act=true; }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
-  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.25){ ax=s.x; ay=s.y; fire = Math.hypot(s.x,s.y)>0.5; assist=true; } }
+  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; } }
   const m = Math.hypot(mx,my); if (m>1){ mx/=m; my/=m; }
   if (ax||ay) { const a=Math.hypot(ax,ay); lastAim={x:ax/a,y:ay/a}; }
+  else if (!mouse.used && Math.hypot(mx,my)>0.2) { const a=Math.hypot(mx,my); lastAim={x:mx/a,y:my/a}; } // 照準していないときは移動方向を向く
   let aim = lastAim;
   if (assist && me) aim = aimAssist(me, aim);
   return { mx, my, ax:aim.x, ay:aim.y, fire, act };
@@ -317,6 +318,7 @@ function botThink(p, dt){
   let ax=p.ax, ay=p.ay, fire=false, act=false;
   if (rev && m < REVIVE_RANGE) act = true;
   else if (tgt) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; mx*=0.5; my*=0.5; }
+  if (!fire && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
   if (p.down) { fire=false; act=false; }
   return { mx, my, ax, ay, fire, act };
 }
