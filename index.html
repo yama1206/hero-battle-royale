@@ -46,7 +46,7 @@
   #bagp button.sl { aspect-ratio:1; width:100%; } #bagp .sl svg { width:80%; height:80%; } #bagp .sl b { position:absolute; right:3px; bottom:1px; font-size:11px; text-shadow:0 0 3px #000; }
   #bagp button.on, .panel .it.on { outline:3px solid #ffe14a; outline-offset:1px; box-shadow:0 0 10px #ffe14a; animation:cur 1s ease-in-out infinite alternate; } .panel .it.on { outline-offset:-2px; border-radius:6px; background:rgba(255,225,74,.12); } #ptr { position:fixed; left:0; top:0; width:26px; height:26px; z-index:50; pointer-events:none; display:none; filter:drop-shadow(0 1px 2px #000); } .panel button.hov { filter:brightness(1.35); box-shadow:0 0 0 2px #fff; } @keyframes cur { from { outline-color:#ffe14a; } to { outline-color:#fff6b8; } } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
   .panel .hint { margin:6px 0 0; font-size:11px; line-height:1.5; } i.ic { width:26px; height:26px; display:block; flex:none; } i.ic svg { width:100%; height:100%; }
-  #setp .srow.on { background:rgba(255,179,71,.18); } #setp .sv { width:56px; text-align:center; }
+  #setp .srow.on { background:rgba(255,179,71,.18); } #setp .sv { width:72px; text-align:center; }
   .padf { outline:3px solid #fff !important; outline-offset:2px; } .padedit { outline-color:#ffb347 !important; }
   .panel h3 { display:flex; justify-content:space-between; align-items:center; margin:0 0 4px; font-size:15px; }
   .panel .it { display:flex; align-items:center; gap:6px; padding:5px 2px; border-bottom:1px solid #222a40; } .panel .it > span { flex:1; } .panel small { color:var(--sub); }
@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.3</div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.4</div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -512,19 +512,21 @@ function readInput(me){
     const pr = i => !!(gp.buttons[i]&&gp.buttons[i].pressed), edge = i => pr(i) && !gpPrev[i];
     // スタート：押してすぐ離す＝持ち物／長押し＝設定。セレクト（ビュー）：大きなマップ
     const n = performance.now();
-    if (edge(9)) gpHold.st = n;
-    if (pr(9) && gpHold.st && n-gpHold.st >= LONG_MS) { gpHold.st = 0; openSettings(); }
-    if (!pr(9) && gpPrev[9] && gpHold.st) { gpHold.st = 0; if (setOpen) closeSettings(); else toggleBag(); }
-    if (edge(8)) toggleMap();
+    if (bindWait) { bindPad(gp); gpPrev = gp.buttons.map(b=>b.pressed); return { mx:0, my:0, ax:lastAim.x, ay:lastAim.y, fx:lastFace.x, fy:lastFace.y, fire:false, act:false, ta:false, idn:false }; }
+    const K = cfg.bind, bp = i => !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.3)), be = i => bp(i) && !gpPrev[i];
+    if (be(K.bag)) gpHold.st = n;
+    if (bp(K.bag) && gpHold.st && n-gpHold.st >= LONG_MS) { gpHold.st = 0; openSettings(); }
+    if (!bp(K.bag) && gpPrev[K.bag] && gpHold.st) { gpHold.st = 0; if (setOpen) closeSettings(); else toggleBag(); }
+    if (be(K.map)) toggleMap();
     const ui = setOpen || bagOpen || mapOpen || !!boxOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
     if (ui) uiPad(edge);
     ptrUpdate(ui && !mapOpen ? lx||rx : 0, ui && !mapOpen ? ly||ry : 0);
     if (ptr.on) { /* カーソル操作中はスティックで動かない */ } else { if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; } }
-    if (!setOpen && ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5))) { fire=true; assist=true; }
+    if (!setOpen && !ptr.on && (bp(K.fire) || bp(K.fire2))) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
-    if (!ui) { if (pr(2) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || pr(2); else if (edge(2)) ctr.rl++;
-      if (edge(12)) sendCmd({ c:'heal' }); } // 十字キー上：回復
-    if (edge(3)) ctr.sw++; if (edge(4)) ctr.mm++;
+    if (!ui) { if (bp(K.act) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || bp(K.act); else if (be(K.act)) ctr.rl++;
+      if (be(K.heal)) sendCmd({ c:'heal' });
+      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; }
     gpPrev = gp.buttons.map(b=>b.pressed); }
   if (setOpen) { mx = my = 0; fire = false; }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
@@ -1737,22 +1739,36 @@ function uiPad(edge){
 }
 
 // ===== 設定（スタート長押し・Esc・持ち物ボタン長押し） =====
-const cfg = { vol:70, assist:1, dmgNum:1 };
-try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){}
+const BIND0 = { fire:7, fire2:5, act:2, sw:3, mm:4, heal:12, bag:9, map:8 };
+const BTN = ['A','B','X','Y','LB','RB','LT','RT','セレクト','スタート','L3','R3','十字↑','十字↓','十字←','十字→','ホーム'];
+const cfg = { vol:70, assist:1, dmgNum:1, bind:{...BIND0} };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){} cfg.bind = { ...BIND0, ...(cfg.bind||{}) };
 const saveCfg = () => { try { localStorage.setItem('hbr_cfg', JSON.stringify(cfg)); } catch(e){} };
 const SETS = [
   { k:'vol', name:'効果音の音量', show:()=>cfg.vol+'%', adj:d=>{ cfg.vol = Math.max(0, Math.min(100, cfg.vol+d*10)); } },
   { k:'assist', name:'エイムアシスト', show:()=>cfg.assist?'オン':'オフ', adj:()=>{ cfg.assist ^= 1; } },
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
+  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['bag','持ち物（長押しで設定）'],['map','マップ']]
+    .map(([b,name]) => ({ k:'b_'+b, bind:b, name:'🎮 '+name, show:()=>bindWait===b ? '押して…' : BTN[cfg.bind[b]] || ('ボタン'+cfg.bind[b]), adj:()=>{ bindWait = b; bindReady = false; } })),
+  { k:'bReset', name:'🎮 ボタンを初期に戻す', show:()=>'戻す', adj:()=>{ cfg.bind = { ...BIND0 }; } },
 ];
+// キーバインド：変えたい操作を選び、新しいボタンを押す（すべてのボタンを一度離してから受け付ける）
+let bindWait = null, bindReady = false;
+function bindPad(gp){
+  const down = gp.buttons.map(b => b.pressed || b.value > 0.3);
+  if (!bindReady) { if (!down.some(x=>x)) bindReady = true; return; }
+  const i = down.findIndex(x=>x); if (i < 0) return;
+  for (const k in cfg.bind) if (k !== bindWait && cfg.bind[k] === i) cfg.bind[k] = cfg.bind[bindWait]; // 重なったら入れ替え
+  cfg.bind[bindWait] = i; bindWait = null; saveCfg(); renderSettings(); sfx('ui'); }
 let setOpen = false, setSel = 0;
-function setAdj(d){ SETS[setSel].adj(d); saveCfg(); if (SETS[setSel].k==='vol') sfx('hitm'); }
+function setAdj(d){ if (bindWait) return; SETS[setSel].adj(d); saveCfg(); if (SETS[setSel].k==='vol') sfx('hitm'); }
 function openSettings(){ if (state.phase!=='match') return; setOpen = true; mapOpen = false; if (bagOpen) toggleBag(); $('setp').style.display='block'; renderSettings(); sfx('ui'); }
-function closeSettings(){ if (!setOpen) return; setOpen = false; $('setp').style.display='none'; }
+function closeSettings(){ if (!setOpen) return; setOpen = false; bindWait = null; $('setp').style.display='none'; }
 function renderSettings(){
   $('setp').innerHTML = `<h3><span>設定</span><button class="sec" data-s="x">閉じる</button></h3>` + SETS.map((o,i)=>`<div class="it srow${i===setSel?' on':''}"><span>${o.name}</span>`
     + `<button class="sec" data-s="${i}" data-d="-1">◀</button><b class="sv">${o.show()}</b><button class="sec" data-s="${i}" data-d="1">▶</button></div>`).join('')
-    + `<div class="sub hint">ゲームパッド：十字キー上下で選ぶ・左右で変える／B：閉じる<br>スタート：持ち物（長押しで設定）／セレクト：マップ<br>キーボード：Tab 持ち物／M マップ／Esc 設定</div>`; }
+    + `<div class="sub hint">🎮の行は ▶ を押したあと、使いたいボタンを押すと変わります（ほかと重なったら入れ替え）<br>ゲームパッド：十字キー上下で選ぶ・左右で変える／B：閉じる<br>スタート：持ち物（長押しで設定）／セレクト：マップ<br>キーボード：Tab 持ち物／M マップ／Esc 設定</div>`;
+  const on = $('setp').querySelector('.srow.on'); if (on) on.scrollIntoView({ block:'nearest' }); }
 
 // ===== 大きなマップ（セレクト・M・ミニマップを押す） =====
 let mapOpen = false, bigCv = null, bigId = null; const BIG = 360;
