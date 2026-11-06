@@ -32,7 +32,7 @@
 </head>
 <body>
 <div id="lobby"><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階3：ダウンと蘇生</div>
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階3.5：斜め見下ろし表示</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -75,6 +75,26 @@ const ENGAGE_MS = 10000;             // BOTの攻撃許可が続く時間
 const BOT_SPREAD = 0.12;
 // ----------------------------------------------------------------
 const COLORS = ['#ffb347','#5bc0ff','#ff6b9a','#7be07b','#c89bff'];
+
+// ===== 見た目（斜め見下ろし）とスキン =====
+// ゲームの中身（移動・弾・当たり判定）は足元の位置で計算し、描くときだけ立体的に見せる
+const BODY_H = 22;      // 体の中心（銃を構える高さ）。弾もこの高さで描く
+const WALL_H = 46;      // 障害物の高さ（見た目だけ）
+const SPRITE_W = 48, SPRITE_H = 64;   // キャラ画像の表示サイズ（足元が画像の下端中央）
+// キャラ画像に差し替えるとき：ここに書くだけでOK。横向きは「右向き」1枚（左向きは自動で反転）
+//   例） hero1: { front:'skins/hero1/front.png', back:'skins/hero1/back.png', side:'skins/hero1/side.png' }
+// 画像がない・読み込めないスキンは仮の絵で表示されます
+const SKINS = {
+  default: null,
+};
+const skinCache = {};
+function skinImg(skin, dir){
+  const def = SKINS[skin]; if (!def || !def[dir]) return null;
+  const key = skin+'/'+dir; let im = skinCache[key];
+  if (!im) { im = skinCache[key] = new Image(); im.src = def[dir]; }
+  return im.complete && im.naturalWidth ? im : null;
+}
+const dirOf = (ax, ay) => Math.abs(ax) > Math.abs(ay)*1.2 ? (ax<0?'left':'right') : (ay<0?'back':'front');
 const BOT_NAMES = ['アルファ','ブラボー','チャーリー','デルタ','エコー','フォックス','ゴルフ','ホテル'];
 
 const OBS = (() => { let s = 12345; const rnd = () => (s = (s*16807) % 2147483647) / 2147483647; const a = [];
@@ -198,7 +218,7 @@ function hostStartMatch(){
   const nTeams = Math.ceil(MAX_PLAYERS/state.teamSize), base = [];
   for (let t=0;t<nTeams;t++){ const a=t/nTeams*Math.PI*2; base.push({ x:MAP/2+Math.cos(a)*600, y:MAP/2+Math.sin(a)*600 }); }
   state.players.forEach(p => { const b=base[teamOf(p.slot)], k=p.slot%state.teamSize;
-    Object.assign(p, { x:b.x+(k-1)*50, y:b.y+(k%2)*40, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, kills:0, rv:0, dhp:0, dsh:0 });
+    Object.assign(p, { skin:p.skin||'default', x:b.x+(k-1)*50, y:b.y+(k%2)*40, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, kills:0, rv:0, dhp:0, dsh:0 });
     pushOut(p); });
   for (const k in engaged) delete engaged[k];
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
@@ -305,7 +325,7 @@ function feed(t){ feeds.push({ t, at:Date.now() }); state.feed = feeds.slice(-5)
 function broadcast(){
   const now = Date.now();
   const s = { phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner,
-    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2),
+    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, dhp:p.dhp, dsh:p.dsh, rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy)]) };
   const pkt = { t:'state', s, now };
@@ -374,46 +394,105 @@ function frame(t){
   if (state.phase!=='lobby') draw(me);
   requestAnimationFrame(frame);
 }
+// ===== 斜め見下ろしの描画 =====
+function drawBlock(o){
+  ctx.fillStyle='rgba(0,0,0,.22)'; ctx.fillRect(o.x+6, o.y+6, o.w, o.h);               // 影
+  ctx.fillStyle='#474c5a'; ctx.fillRect(o.x, o.y+o.h-WALL_H, o.w, WALL_H);              // 正面
+  ctx.fillStyle='#7c8293'; ctx.fillRect(o.x, o.y-WALL_H, o.w, o.h);                     // 上面
+  ctx.strokeStyle='#9aa0b0'; ctx.lineWidth=2; ctx.strokeRect(o.x+1, o.y-WALL_H+1, o.w-2, o.h-2);
+}
+function drawPlayer(v){
+  const { p, x, y, ax, ay, mine, ally } = v;
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y, p.down?26:15, p.down?8:6, 0, 0, Math.PI*2); ctx.fill();
+  if (p.down) {
+    if (p.dsh > 0) { const a=Math.atan2(ay,ax); ctx.strokeStyle=`rgba(120,200,255,${0.3+0.6*p.dsh/DOWN_SHIELD})`; ctx.lineWidth=5;
+      ctx.beginPath(); ctx.arc(x,y-8,R+16,a-DSHIELD_ARC,a+DSHIELD_ARC); ctx.stroke(); }
+    if (p.rv > 0) { ctx.strokeStyle='#5f8'; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(x,y-8,R+8,-Math.PI/2,-Math.PI/2+Math.PI*2*p.rv); ctx.stroke(); }
+    drawHero(x, y, ax, ay, p, 0, true, false); return;
+  }
+  if (mine || ally) { ctx.strokeStyle = mine ? '#fff' : '#5f8'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(x, y, 20, 8, 0, 0, Math.PI*2); ctx.stroke(); }
+  drawHero(x, y, ax, ay, p, v.moving ? p._walk : 0, false, false);
+}
+// キャラ1人を描く（画像があれば画像、なければ仮の絵）
+function drawHero(x, y, ax, ay, p, walk, down, sil){
+  const dir = down ? 'front' : dirOf(ax, ay);
+  const col = COLORS[p.slot], S = c => sil ? '#bfffd4' : c;
+  ctx.save(); ctx.translate(x, y);
+  if (down) { ctx.translate(28, -6); ctx.rotate(-Math.PI/2); ctx.globalAlpha *= 0.85; } // 倒れている
+  if (dir==='left') ctx.scale(-1, 1);
+  const gun = () => { if (down) return; ctx.save(); if (dir==='left') ctx.scale(-1,1);
+    ctx.strokeStyle=S('#2a2d36'); ctx.lineWidth=5; ctx.lineCap='round'; ctx.beginPath();
+    ctx.moveTo(ax*4, -BODY_H+ay*4); ctx.lineTo(ax*26, -BODY_H+ay*20); ctx.stroke(); ctx.restore(); };
+  const img = skinImg(p.skin||'default', dir==='left'||dir==='right' ? 'side' : dir);
+  if (dir==='back') gun();
+  if (img) { ctx.drawImage(img, -SPRITE_W/2, -SPRITE_H, SPRITE_W, SPRITE_H); }
+  else {
+    const sw = Math.sin(walk)*4, bob = walk ? Math.abs(Math.sin(walk))*1.5 : 0;
+    ctx.fillStyle=S('#2b2f3d'); ctx.fillRect(-8, -15, 6, 15+sw*0.5); ctx.fillRect(2, -15, 6, 15-sw*0.5);   // 脚
+    ctx.translate(0, -bob);
+    ctx.fillStyle=S(col); ctx.fillRect(-11, -35, 22, 22);                                                 // 胴体
+    ctx.fillStyle=S('rgba(0,0,0,.18)'); ctx.fillRect(-11, -17, 22, 4);                                     // ベルト
+    ctx.fillStyle=S('#f2d3b3'); ctx.beginPath(); ctx.arc(0, -46, 12, 0, Math.PI*2); ctx.fill();            // 顔
+    ctx.fillStyle=S('#3a2a22');                                                                           // 髪
+    if (dir==='back') { ctx.beginPath(); ctx.arc(0, -46, 12.5, 0, Math.PI*2); ctx.fill(); }
+    else if (dir==='front') { ctx.beginPath(); ctx.arc(0, -48, 12.5, Math.PI, Math.PI*2); ctx.fill(); ctx.fillRect(-12.5, -49, 4, 9); ctx.fillRect(8.5, -49, 4, 9); }
+    else { ctx.beginPath(); ctx.arc(-1, -48, 12.5, Math.PI*0.9, Math.PI*2); ctx.fill(); ctx.fillRect(-12.5, -49, 7, 10); }
+    if (!sil) { ctx.fillStyle='#222';                                                                     // 目
+      if (dir==='front') { ctx.fillRect(-5, -45, 3, 4); ctx.fillRect(2, -45, 3, 4); }
+      else if (dir!=='back') ctx.fillRect(6, -45, 3, 4); }
+  }
+  if (dir!=='back') gun();
+  ctx.restore();
+}
+function drawLabel(v){
+  const { p, x, y, mine, ally } = v;
+  ctx.textAlign='center'; ctx.font='bold 12px sans-serif';
+  if (p.down) { ctx.fillStyle='#fff'; ctx.fillText(`${p.name}　ダウン ${p.bl}秒`, x, y-34);
+    if (ally && !mine) { ctx.fillStyle='#5f8'; ctx.fillText('蘇生：近づいて長押し', x, y+26); } return; }
+  const top = y - SPRITE_H - 6;
+  ctx.fillStyle = ally ? '#bfffd4' : '#fff'; ctx.font='bold 13px sans-serif'; ctx.fillText(p.name, x, top-10);
+  ctx.fillStyle='#000a'; ctx.fillRect(x-22,top-5,44,7);
+  ctx.fillStyle='#6cf'; ctx.fillRect(x-22,top-5,44*p.sh/100,3); ctx.fillStyle='#e55'; ctx.fillRect(x-22,top-2,44*p.hp/100,4);
+}
+
 function draw(me){
   const W=innerWidth, H=innerHeight;
   const mp = state.players.find(p=>p.id===myId);
   let cam = me || { x:MAP/2, y:MAP/2 };
   if (mp && mp.out) { const m = state.players.find(q=>!q.out && teamOf(q.slot)===teamOf(mp.slot)); if (m) cam = { x:isHost?m.x:m.dx, y:isHost?m.y:m.dy }; } // 脱落後は味方を観戦
-  const cx=cam.x-W/2, cy=cam.y-H/2;
+  const cx=cam.x-W/2, cy=cam.y-BODY_H-H/2; // 体の中心が画面の真ん中に来るように
   ctx.fillStyle='#1a2a1e'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.translate(-cx,-cy);
   ctx.fillStyle='#24402b'; ctx.fillRect(0,0,MAP,MAP);
   ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.beginPath();
   for (let g=0; g<=MAP; g+=100){ ctx.moveTo(g,0); ctx.lineTo(g,MAP); ctx.moveTo(0,g); ctx.lineTo(MAP,g); } ctx.stroke();
   ctx.strokeStyle='#6b5'; ctx.lineWidth=4; ctx.strokeRect(0,0,MAP,MAP);
-  ctx.fillStyle='#5a5f6e'; for (const o of OBS) ctx.fillRect(o.x,o.y,o.w,o.h);
-  ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2); ctx.fill(); }
+  // 弾の影（地面）
+  ctx.fillStyle='rgba(0,0,0,.25)'; for (const b of state.bullets){ ctx.beginPath(); ctx.ellipse(b.x,b.y,4,2,0,0,Math.PI*2); ctx.fill(); }
   const myTeam = mp ? teamOf(mp.slot) : -1;
+  // 手前（画面の下）にあるものほど後から描く
+  const list = OBS.map(o => ({ k:o.y+o.h, o }));
+  const vis = [];
   for (const p of state.players) {
     if (p.out) continue;
     const mine = p.id===myId;
     const x = mine&&me ? me.x : (isHost ? p.x : p.dx), y = mine&&me ? me.y : (isHost ? p.y : p.dy);
     const ax = mine&&me ? me.ax : p.ax, ay = mine&&me ? me.ay : p.ay;
-    const ally = teamOf(p.slot)===myTeam;
-    if (p.down) {
-      if (p.dsh > 0) { const a=Math.atan2(ay,ax); ctx.strokeStyle=`rgba(120,200,255,${0.3+0.6*p.dsh/DOWN_SHIELD})`; ctx.lineWidth=5;
-        ctx.beginPath(); ctx.arc(x,y,R+10,a-DSHIELD_ARC,a+DSHIELD_ARC); ctx.stroke(); }
-      ctx.globalAlpha=0.6; ctx.fillStyle=COLORS[p.slot]; ctx.beginPath(); ctx.arc(x,y,R*0.75,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
-      ctx.strokeStyle='#f44'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,R*0.75,0,Math.PI*2); ctx.stroke();
-      if (p.rv > 0) { ctx.strokeStyle='#5f8'; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(x,y,R+4,-Math.PI/2,-Math.PI/2+Math.PI*2*p.rv); ctx.stroke(); }
-      ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
-      ctx.fillText(`${p.name}　ダウン ${p.bl}秒`, x, y-30);
-      if (ally && !mine) { ctx.fillStyle='#5f8'; ctx.fillText('蘇生：近づいて長押し', x, y+36); }
-      continue;
-    }
-    ctx.strokeStyle=COLORS[p.slot]; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+ax*(R+12), y+ay*(R+12)); ctx.stroke();
-    ctx.fillStyle=COLORS[p.slot]; ctx.beginPath(); ctx.arc(x,y,R,0,Math.PI*2); ctx.fill();
-    if (mine){ ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.stroke(); }
-    else if (ally){ ctx.strokeStyle='#5f8'; ctx.lineWidth=2; ctx.stroke(); }
-    ctx.fillStyle = ally ? '#bfffd4' : '#fff'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.fillText(p.name, x, y-34);
-    ctx.fillStyle='#000a'; ctx.fillRect(x-22,y-29,44,7);
-    ctx.fillStyle='#6cf'; ctx.fillRect(x-22,y-29,44*p.sh/100,3); ctx.fillStyle='#e55'; ctx.fillRect(x-22,y-26,44*p.hp/100,4);
+    const moved = Math.hypot(x-(p._lx??x), y-(p._ly??y)); p._lx=x; p._ly=y;
+    p._walk = (p._walk||0) + moved*0.12;
+    const v = { p, x, y, ax, ay, mine, ally: teamOf(p.slot)===myTeam, moving: moved>0.3 };
+    vis.push(v); list.push({ k:y, v });
   }
+  list.sort((a,b)=>a.k-b.k);
+  for (const it of list) { if (it.o) drawBlock(it.o); else drawPlayer(it.v); }
+  // 壁の裏に隠れた自分・味方はシルエットで見せる（敵は見えない）
+  for (const v of vis) { if (!v.mine && !v.ally) continue;
+    if (OBS.some(o => o.y+o.h > v.y && v.x+14 > o.x && v.x-14 < o.x+o.w && v.y > o.y-WALL_H && v.y-SPRITE_H < o.y+o.h)) {
+      ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true); ctx.restore(); } }
+  // 弾（体の高さ）
+  ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,4,0,Math.PI*2); ctx.fill(); }
+  // 名前・体力（いちばん上に）
+  for (const v of vis) drawLabel(v);
   ctx.restore();
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
