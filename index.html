@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.1<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.2<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -193,11 +193,12 @@ const SPAWN_ALLY_R = 72;             // 味方の出撃はリーダーから半�
 // 安全地帯（仕様5）。at＝縮小が始まる秒、dur＝縮小にかける秒、area＝マップ全体に対する面積、dmg＝この段階の場外ダメージ/秒
 // 最初の円はマップ全体を囲む円。縮小の始まる時刻は表の時刻と読んでいます（変えるならここだけ）
 const ZONE_STAGES = [
-  { at:60,  dur:60, area:0.75, dmg:3 },
-  { at:180, dur:60, area:0.55, dmg:6 },
-  { at:300, dur:60, area:0.35, dmg:9 },
-  { at:420, dur:60, area:0.18, dmg:12 },
-  { at:540, dur:60, area:0.08, dmg:18 },
+  // りょうさんの指示（2026-11-06）：仕様（75→55→35→18→8%）より狭くする。面積はマップ全体に対する割合（仮の値）
+  { at:60,  dur:60, area:0.40,  dmg:3 },   // 半径 約5700
+  { at:180, dur:60, area:0.18,  dmg:6 },   // 約3800
+  { at:300, dur:60, area:0.07,  dmg:9 },   // 約2400
+  { at:420, dur:60, area:0.025, dmg:12 },  // 約1400
+  { at:540, dur:60, area:0.006, dmg:18 },  // 約700
 ];
 const ZONE_END = 600, ZONE_END_DMG = 30; // 10:00で消滅、以後はマップ全体が30/秒
 // ----------------------------------------------------------------
