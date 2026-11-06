@@ -34,12 +34,18 @@
   .rwrap { overflow:auto; touch-action:pan-x pan-y; min-height:0; flex:1; }
   .rtab { border-collapse:collapse; width:100%; font-size:12px; font-weight:400; white-space:nowrap; }
   .rtab th { position:sticky; top:0; background:var(--panel); color:var(--sub); font-weight:700; padding:4px 6px; }
+  .panel { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(330px,90vw); max-height:64vh; overflow:auto; touch-action:pan-y; display:none;
+    background:rgba(16,19,26,.94); border:1px solid var(--line); border-radius:12px; padding:8px 10px; font-size:13px; }
+  #bagp { left:calc(12px + env(safe-area-inset-left)); top:calc(70px + env(safe-area-inset-top)); transform:none; max-height:calc(100% - 150px); }
+  .panel h3 { display:flex; justify-content:space-between; align-items:center; margin:0 0 4px; font-size:15px; }
+  .panel .it { display:flex; align-items:center; gap:6px; padding:5px 2px; border-bottom:1px solid #222a40; } .panel .it > span { flex:1; } .panel small { color:var(--sub); }
+  .panel button { width:auto; margin:0; padding:6px 10px; font-size:13px; flex:none; }
   .rtab td { padding:4px 6px; border-top:1px solid #222a40; } .rtab tr.tp td { border-top:1px solid var(--line); } .rtab tr.me td { background:rgba(255,179,71,.15); }
 </style>
 </head>
 <body>
 <div id="safe"></div><div id="lobby"><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階5：武器7種</div>
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -58,10 +64,10 @@
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
   </div>
   <div id="msg"></div>
-  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで攻撃・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・LBで魔法の範囲攻撃モード／PC WASD移動・マウス照準・クリック攻撃・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>※物資箱ができるまでは、開始時にランダムな武器を2つ持っています</div>
+  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで攻撃・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・LBで魔法の範囲攻撃モード／PC WASD移動・マウス照準・クリック攻撃・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復／I・Tab（ビュー）で持ち物<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
 </div></div>
 
-<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div>
+<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="boxp" class="panel"></div>
   <div id="result"><div class="card"><div id="resTxt"></div><button id="btnLobby" style="display:none">ロビーに戻る</button><div class="sub" id="resWait" style="margin:10px 0 0">ホストがロビーに戻すのを待っています…</div></div></div>
 </div>
 
@@ -88,11 +94,44 @@ const WEAPONS = {
 };
 const WIDS = Object.keys(WEAPONS);
 const AMMO_NAME = { s:'小口径弾', l:'大口径弾' };
-const START_AMMO = 80, START_STONE = 3; // 仮：物資箱ができるまでの初期所持（弾は40発×2枠ぶん）
 const MP_MAX = 100, MP_REGEN = 10, SWITCH_SEC = 0.3; // 武器の持ち替え時間は仮
-const wOf = p => p && p.wp ? WEAPONS[WIDS[p.wp[p.wp[4]*2]]] : null; // いま持っている武器
+const wAt = (p, s) => p && p.wp && p.wp[s*2] >= 0 ? WEAPONS[WIDS[p.wp[s*2]]] : null; // 枠s（0か1）の武器。なければnull
+const wOf = p => p && p.wp ? wAt(p, p.wp[4]) : null; // いま持っている武器
 // 撃っているときの移動速度の倍率（魔法の詠唱中はさらに遅い）
-const moveMul = (p, firing) => { const w = wOf(p); if (!w) return 1; if (p.cast || p.cs) return w.area.move; return firing ? w.fireMove : 1; };
+const moveMul = (p, firing) => { if (p && (p.heal || p.hl)) return HEAL_MOVE; const w = wOf(p); if (!w) return 1; if (p.cast || p.cs) return w.area.move; return firing ? w.fireMove : 1; };
+// ===== 物資（仕様2・3・4）。数値は仕様どおり。仕様にない数値は「仮」と書いてあります =====
+// stack＝1枠に入る数（回復アイテムは最大所持数と同じ）。time＝使用時間（秒）
+const ITEMS = {
+  as:{ name:'小口径弾', stack:40, col:'#e8d36a' }, al:{ name:'大口径弾', stack:40, col:'#e89a4a' },
+  st:{ name:'砥石', stack:5, col:'#c8d0d8' },                          // 砥石のスタック数は仮
+  m1:{ name:'小型肉', stack:4, hp:50, time:3, col:'#e8806a' },  m2:{ name:'大型肉', stack:2, hp:100, time:6, col:'#c8432c' },
+  s1:{ name:'小型シールド', stack:4, sh:50, time:2, col:'#7cd0ff' }, s2:{ name:'大型シールド', stack:2, sh:100, time:4, col:'#2f8fe0' },
+};
+// 武器パーツ：v＝レアリティごとの効果（ノーマル・レア・エピック・レジェンダリー）。fit＝付けられる武器
+// マガジンは弾の種類で分けています（リボルバーは大口径弾なので大口径マガジン）
+const PARTS = {
+  muz:{ name:'マズル',           v:[.08,.12,.16,.20], fit:w=>!!w.ammo },                          // 反動（ぶれの増え方）を減らす
+  mgs:{ name:'小口径マガジン',   v:[.10,.15,.20,.25], fit:w=>w.ammo==='s' },                      // 装弾数（切り上げ）
+  mgl:{ name:'大口径マガジン',   v:[.10,.15,.20,.25], fit:w=>w.ammo==='l' },
+  stk:{ name:'ストック',         v:[.10,.15,.20,.25], fit:w=>['SMG','AR','SR'].includes(w.cat) }, // ぶれの戻る速さ
+  grp:{ name:'グリップ',         v:[.10,.15,.20,.25], fit:w=>w.cat==='HG'||!!w.melee },           // 持ち替えの速さ（剣は攻撃後の硬直を短く）
+  sgt:{ name:'サイト・スコープ', v:[.08,.12,.16,.20], fit:w=>['SMG','AR','SR'].includes(w.cat) }, // 基本のぶれ（拡散）を減らす
+  amp:{ name:'魔法増幅器',       v:[.08,.12,.16,.20], fit:w=>!!w.magic },                         // MP消費を減らす
+};
+const PKEYS = Object.keys(PARTS);
+const RARE = ['ノーマル','レア','エピック','レジェンダリー'], RCOL = ['#e8e8e8','#4aa3ff','#c07cff','#ffc94a'];
+const LOOT_COUNT = { chest:40, hchest:6, weapon:[60,75], ammo:[100,120], med:[60,80], part:[50,65] }; // 配置数（仕様）
+const LOOT_MUL = 1;  // 仮：配置数の倍率。仕様の数は2400四方のマップ用なので、ソルティアで少なく感じたらここを上げる
+const AREA_W = { '少':1, '中':2, '多':4 };      // エリアの物資の量 → 出やすさ
+const HOT_AREAS = ['old','pier','yard'];        // 高級アイテムが出やすいエリア（仕様：3か所）。高級チェストはここに置く
+const CHEST_N = [[3,4],[4,5]], CHEST_P = [[.25,.30,.25,.20],[.20,.20,.20,.40]]; // 通常・高級：個数／武器・弾薬・回復・パーツの確率
+const WCAT = [['HG',.20],['SMG',.25],['AR',.25],['SR',.10],['近接',.10],['魔法',.10]];
+const PRAR = { ground:[.50,.34,.12,.04], hi:[0,.47,.37,.16], drop:[0,.28,.44,.28] }; // パーツのレアリティ
+const MED_P = [['m1',.375],['m2',.125],['s1',.375],['s2',.125]];
+const AMMO_PACK = 20, SWORD_STONE = 2;          // 仮：弾薬1個の弾数／剣のそばに落ちている砥石の数
+const DROP_AT = [180, 360, 480];                // 補給物資の投下（3分・6分・8分）
+const BOX_LIFE = 120000, OUT_VANISH = 5000;     // デスボックスは120秒。安全地帯の外の物が消えるまで5秒（仮）
+const BAG_SLOTS = 8, PICK_R = 50, AUTO_R = R+10, HOLD_SEC = 0.45, HEAL_MOVE = 0.5; // 拾える距離・長押しの長さ・回復中の移動速度は仮
 const CRAWL = 60;                    // ダウン中の這う速度
 const DOWN_HP = 100;                 // ダウン中の体力
 const DOWN_SHIELD = 200;             // ダウンシールド耐久（仕様：ノーマル200。レアリティで変わるのは後で）
@@ -422,18 +461,21 @@ const actBtn = () => ({ x:innerWidth-80-SAFE.r, y:innerHeight-(innerWidth>innerH
 function touchBtns(){ const b = actBtn(), me = state.players.find(p=>p.id===myId), w = wOf(me);
   return [ { k:'sw', x:b.x-88, y:b.y+44, r:28, label:'切替' },
            { k:'rl', x:b.x, y:b.y-82, r:28, label:'リロード', show:!!(w && w.ammo) },
-           { k:'mm', x:b.x-88, y:b.y-40, r:28, label:me&&me.mm?'通常':'範囲', show:!!(w && w.magic) } ].filter(x=>x.show!==false); }
+           { k:'mm', x:b.x-88, y:b.y-40, r:28, label:me&&me.mm?'通常':'範囲', show:!!(w && w.magic) },
+           { k:'heal', x:b.x, y:b.y-146, r:28, label:'回復' },
+           { k:'bag', x:b.x-152, y:b.y+44, r:28, label:'持ち物' } ].filter(x=>x.show!==false); }
 const ctr = { sw:0, rl:0, mm:0 }; // 押した回数（ホストは増えた分だけ処理する）
 addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
-  if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++; });
+  if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
+  if (e.code==='KeyH') sendCmd({ c:'heal' }); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); } });
 addEventListener('keyup', e => keys[e.code]=false);
 let wheelAt = 0; addEventListener('wheel', e => { const n=performance.now(); if (n-wheelAt>250 && Math.abs(e.deltaY)>4) { wheelAt=n; ctr.sw++; } }, { passive:true });
 addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
 function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
-    if (canRevive() && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
+    if ((canRevive() || curTarget) && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
-    if (tb) { ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
+    if (tb) { if (tb.k==='heal') sendCmd({ c:'heal' }); else if (tb.k==='bag') toggleBag(); else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
     const side = t.clientX < innerWidth/2 ? 'move':'aim';
     if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
 function tMove(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
@@ -443,7 +485,7 @@ const dz = v => Math.abs(v) < 0.2 ? 0 : v;
 
 let lastAim = { x:1, y:0 }, gpPrev = [];
 function readInput(me){
-  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act;
+  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act;
   if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
   if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; }
@@ -453,7 +495,8 @@ function readInput(me){
     if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; }
     if ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5)) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
-    if (pr(2) && canRevive()) act=true; else if (edge(2)) ctr.rl++;
+    if (pr(2) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || pr(2); else if (edge(2)) ctr.rl++;
+    if (edge(12)) sendCmd({ c:'heal' }); if (edge(8)) toggleBag(); // 十字キー上：回復／ビュー（Back）：持ち物
     if (edge(3)) ctr.sw++; if (edge(4)) ctr.mm++;
     gpPrev = gp.buttons.map(b=>b.pressed); }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
@@ -463,7 +506,7 @@ function readInput(me){
   else if (!mouse.used && Math.hypot(mx,my)>0.2) { const a=Math.hypot(mx,my); lastAim={x:mx/a,y:my/a}; } // 照準していないときは移動方向を向く
   let aim = lastAim;
   if (assist && me) aim = aimAssist(me, aim);
-  return { mx, my, ax:aim.x, ay:aim.y, fire, act, ta };
+  return { mx, my, ax:aim.x, ay:aim.y, fire, act, ta, idn };
 }
 // エイムアシスト：照準の近くの敵へ少しだけ寄せる。遠いほど弱い
 function aimAssist(me, aim){
@@ -481,7 +524,10 @@ let local = null, lastT = performance.now(), sendAcc = 0;
 function localStep(dt){
   const me = state.players.find(p=>p.id===myId); if (!me) return null;
   if (!local || local.rs !== me.rs) local = { x:me.x, y:me.y, rs:me.rs };
+  curTarget = state.phase==='match' && alive(me) ? nearTarget(local) : null;
   const inp = readInput(local);
+  if (canRevive()) inter.on = false; else interStep(inp.idn);
+  if (boxOpen && (Math.hypot(inp.mx, inp.my) > 0.2 || inp.fire || !alive(me))) closeBox(); // 動く・攻撃するとデスボックスは閉じる
   if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
   local.ax = inp.ax; local.ay = inp.ay; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
   local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm;
@@ -503,6 +549,7 @@ function startHost(){
       if (d.t==='hello') { const used=state.players.map(p=>p.slot); let slot=0; while(used.includes(slot)) slot++;
         state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot }); renderList(); broadcast(); }
       else if (d.t==='in') inputs[c.peer] = d;
+      else if (d.t==='cmd') hostCmd(state.players.find(p=>p.id===c.peer), d);
     });
     c.on('close', () => onLeave(c.peer)); c.on('error', () => onLeave(c.peer));
   });
@@ -527,13 +574,13 @@ function hostStartMatch(){
     Object.assign(p, { skin:p.skin||'default', x:s.x, y:s.y, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, rv:0, dhp:0, dsh:0, wp:null, bwp:null,
       kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0 }); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
   for (const k in engaged) delete engaged[k];
-  state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ev = [];
+  state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ev = []; state.drops = []; spawnLoot();
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
   broadcast(); enterGame();
 }
 function hostBackToLobby(){
   state.players = state.players.filter(p=>!p.bot);
-  state.phase='lobby'; state.bullets=[]; broadcast(); showLobby();
+  state.phase='lobby'; state.bullets=[]; state.loot=null; broadcast(); showLobby();
 }
 let bulletId = 0;
 function hostTick(dt){
@@ -557,6 +604,8 @@ function hostTick(dt){
     if (outOfZone(zn, p.x, p.y)) { p.zAcc = (p.zAcc||0) + dt; while (p.zAcc >= 1 && !p.out) { p.zAcc -= 1; zoneHit(p, zn.dmg, now); } if (p.out) continue; }
     else p.zAcc = 0;
     if (p.down) { p.rl = 0; if (now >= p.bleedAt) eliminate(p, '時間切れ'); continue; }
+    if (p.heal && now >= p.heal.t) { const it = ITEMS[p.heal.c]; // 回復：使い終わったときに1個使う
+      if (bagTake(p, p.heal.c, 1)) { if (it.hp) p.hp = Math.min(100, p.hp+it.hp); if (it.sh) p.sh = Math.min(100, p.sh+it.sh); } p.heal = null; }
     // 蘇生（長押し）：近くのダウンした味方
     if (inp.act) { const tgt = state.players.find(q=>q.down && !q.out && teamOf(q.slot)===teamOf(p.slot) && Math.hypot(q.x-p.x,q.y-p.y)<REVIVE_RANGE);
       if (tgt) { p.reviving = true; tgt.rvTick = now; tgt.rv += dt/REVIVE_SEC;
@@ -581,6 +630,7 @@ function hostTick(dt){
     for (const q of state.players) if (!q.out && teamOf(q.slot)!==c.tm && Math.hypot(q.x-c.x,q.y-c.y) < c.r+R) damage(q, w.dmg, { o:c.o, vx:q.x-c.x||1, vy:q.y-c.y }, now);
     if (o && o.cast===c) o.cast = null; }
   state.casts = state.casts.filter(c=>!c.done);
+  lootTick(dt, now, el, zn);
   state.ev = state.ev.filter(e=>now-e.at < 700);
   state.bullets = state.bullets.filter(b=>b.life>0);
   // 順位：チームが全滅した時点で「残りチーム数＋1」位。最後まで残ったチームが1位
@@ -597,57 +647,190 @@ function hostTick(dt){
 // ===== 武器の処理（ホスト） =====
 let evId = 0;
 function pushEv(e){ e.id = ++evId; e.at = Date.now(); state.ev.push(e); }
-function giveLoadout(p){ // 仮：物資箱ができるまで、開始時に別々の武器を2つ持たせる
-  const ids = [...WIDS.keys()].sort(()=>Math.random()-.5), w0 = WEAPONS[WIDS[ids[0]]], w1 = WEAPONS[WIDS[ids[1]]];
-  Object.assign(p, { wp:[ids[0], w0.mag||0, ids[1], w1.mag||0, 0], am:[START_AMMO, START_AMMO], st:START_STONE, swg:0, mp:MP_MAX, bl:0, rl:0, rlT:1, swt:0, mm:0,
+function giveLoadout(p){ // 開始時は素手・持ち物なし（物資を拾って戦う）。wp＝[武器1, 弾倉1, 武器2, 弾倉2, いまの枠]（武器なしは-1）
+  Object.assign(p, { wp:[-1,0,-1,0,0], pt:[{},{}], bag:Array(BAG_SLOTS).fill(null), heal:null, swg:0, mp:MP_MAX, bl:0, rl:0, rlT:1, swt:0, mm:0,
     wu:{}, cast:null, trig:false, lastAtk:0, lastShot:0, noAmmo:0, _sw:undefined, _rl:undefined, _mm:undefined });
 }
+// 付けているパーツの効果（なければ0）
+const ptv = (p, s, k) => { const r = p.pt && p.pt[s] ? p.pt[s][k] : undefined; return r===undefined || r===null ? 0 : PARTS[k].v[r]; };
+function magCap(p, s){ const w = wAt(p, s); if (!w || !w.mag) return 0; return Math.ceil(w.mag*(1+ptv(p, s, w.ammo==='s'?'mgs':'mgl'))); }
+const ammoCode = w => w.ammo==='s' ? 'as' : 'al';
 function weaponStep(p, inp, dt, now){
   // ボタンを押した回数が増えたか（BOTは doSw などで直接）
   const pressed = k => { if (inp['do'+k]) return true; const v = inp[k.toLowerCase()]; if (v===undefined) return false;
     const key = '_'+k.toLowerCase(); if (p[key]===undefined) { p[key] = v; return false; } const r = v !== p[key]; p[key] = v; return r; };
   if (now - p.lastAtk > 300) p.mp = Math.min(MP_MAX, p.mp + MP_REGEN*dt); // 攻撃中はMPが回復しない
   let w = wOf(p);
-  if (now - p.lastShot > 100) p.bl = Math.max(0, p.bl - (w.rec||1)*dt); // 撃つのをやめると、ぶれが戻る
+  if (now - p.lastShot > 100) p.bl = Math.max(0, p.bl - (w ? (w.rec||1)*(1+ptv(p,p.wp[4],'stk')) : 1)*dt); // 撃つのをやめると、ぶれが戻る（ストックで速く）
   if (p.swt > 0) p.swt -= dt;
-  if (pressed('Sw')) { p.rl = 0; p.wp[4] ^= 1; p.swt = SWITCH_SEC; p.bl = 0; w = wOf(p); } // 持ち替えるとリロードは取り消し
-  if (pressed('Mm') && w.magic) p.mm ^= 1;
-  const mi = p.wp[4]*2+1;
-  if (w.ammo) { const ai = w.ammo==='s' ? 0 : 1;
-    if (p.rl > 0) { p.rl -= dt; if (p.rl <= 0) { const tot = p.am[ai] + p.wp[mi]; p.wp[mi] = Math.min(w.mag, tot); p.am[ai] = tot - p.wp[mi]; p.rl = 0; } } // 完了時に一括装填
-    const want = pressed('Rl') || (p.wp[mi] === 0 && !inp.fire);
-    if (want && !p.rl && p.wp[mi] < w.mag) { if (p.am[ai] > 0) { p.rl = p.rlT = w.reload; } else p.noAmmo = now; } // 弾切れは自動リロード
-    if (p.wp[mi] === 0 && inp.fire && !p.rl) { if (p.am[ai] > 0) p.rl = p.rlT = w.reload; else p.noAmmo = now; }
+  if (pressed('Sw')) { p.rl = 0; p.wp[4] ^= 1; w = wOf(p); p.swt = SWITCH_SEC/(1 + (w && !w.melee ? ptv(p,p.wp[4],'grp') : 0)); p.bl = 0; } // 持ち替えるとリロードは取り消し
+  if (pressed('Mm') && w && w.magic) p.mm ^= 1;
+  if (!w) { pressed('Rl'); p.trig = !!inp.fire; return; } // 武器なし
+  const sl = p.wp[4], mi = sl*2+1, cap = magCap(p, sl);
+  if (w.ammo) { const ac = ammoCode(w), have = bagN(p, ac);
+    if (p.rl > 0) { p.rl -= dt; if (p.rl <= 0) { const k = Math.min(cap - p.wp[mi], bagN(p, ac)); if (k > 0) { bagTake(p, ac, k); p.wp[mi] += k; } p.rl = 0; } } // 完了時に一括装填
+    const want = pressed('Rl') || (p.wp[mi] === 0 && !inp.fire && have > 0);
+    if (want && !p.rl && p.wp[mi] < cap) { if (have > 0) { p.rl = p.rlT = w.reload; } else p.noAmmo = now; } // 弾切れは自動リロード
+    if (p.wp[mi] === 0 && inp.fire && !p.rl) { if (have > 0) p.rl = p.rlT = w.reload; else p.noAmmo = now; }
   } else pressed('Rl');
-  if (!inp.fire) { p.trig = false; return; }
+  if (!inp.fire || p.heal) { p.trig = false; return; } // 回復中は攻撃できない
   const ready = p.cd <= 0 && p.swt <= 0 && !((p.inv||0) > now) && (w.auto || w.melee || w.magic || inp.ta || p.bot || !p.trig);
   p.trig = true;
   if (!ready) return;
   if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 人間が攻撃を始めた → 同じチームのBOTも撃ってよい
-  const wid = p.wp[p.wp[4]*2], aim = Math.atan2(p.ay, p.ax);
+  const wid = p.wp[sl*2], aim = Math.atan2(p.ay, p.ax);
   if (w.melee) { // 近接：正面の扇形。砥石が必要
-    if (p.st <= 0) { p.noAmmo = now; return; }
-    p.cd = 1/w.rate; p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1;
+    if (bagN(p,'st') <= 0) { p.noAmmo = now; return; }
+    p.cd = (1/w.rate)*(1-ptv(p,sl,'grp')); p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1; // グリップで攻撃後の硬直が短くなる
     pushEv({ k:'slash', x:p.x, y:p.y, a:+aim.toFixed(2), r:w.reach });
     for (const q of state.players) { if (q.out || teamOf(q.slot)===teamOf(p.slot)) continue;
       const dx=q.x-p.x, dy=q.y-p.y, d=Math.hypot(dx,dy); if (d > w.reach+R) continue;
       let da = Math.abs(Math.atan2(dy,dx) - aim); if (da > Math.PI) da = Math.PI*2-da;
       if (d < R || da < w.arc/2) damage(q, w.dmg, { o:p.id, vx:dx||1, vy:dy }, now); }
-    if (++p.swg >= w.swings) { p.swg = 0; p.st--; } // 10回で砥石1個
+    if (++p.swg >= w.swings) { p.swg = 0; bagTake(p,'st',1); } // 10回で砥石1個
     return; }
+  const amp = 1 - ptv(p,sl,'amp');
   if (w.magic && p.mm) { // 魔法の範囲攻撃：前方の地点に円を出し、少しあとで爆発。詠唱中は遅くなる
-    const a = w.area; if (p.cast) return; if (p.mp < a.mp) { p.noAmmo = now; return; }
-    p.mp -= a.mp; p.cd = a.cd; p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1;
+    const a = w.area; if (p.cast) return; if (p.mp < a.mp*amp) { p.noAmmo = now; return; }
+    p.mp -= a.mp*amp; p.cd = a.cd; p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1;
     let tx = p.x+p.ax*a.dist, ty = p.y+p.ay*a.dist; tx = Math.max(0,Math.min(MAP,tx)); ty = Math.max(0,Math.min(MAP,ty));
     p.cast = { x:Math.round(tx), y:Math.round(ty), r:a.r, at:now+a.delay*1000, o:p.id, tm:teamOf(p.slot) }; state.casts.push(p.cast);
     return; }
-  if (w.magic) { if (p.mp < w.mpCost) { p.noAmmo = now; return; } p.mp -= w.mpCost; }
+  if (w.magic) { if (p.mp < w.mpCost*amp) { p.noAmmo = now; return; } p.mp -= w.mpCost*amp; }
   else { if (p.wp[mi] <= 0) return; p.rl = 0; p.wp[mi]--; } // 撃つとリロードは取り消し（弾が残っているとき）
-  const sp = w.base + p.bl + w.moveB*Math.min(1, p.mvAmt||0), ang = aim + (Math.random()-.5)*2*sp;
-  p.bl = Math.min(w.maxB, p.bl + w.bloom); p.cd = 1/w.rate; p.lastAtk = now; p.lastShot = now; p.wu[wid] = (p.wu[wid]||0)+1;
+  const sp = w.base*(1-ptv(p,sl,'sgt')) + p.bl + w.moveB*Math.min(1, p.mvAmt||0), ang = aim + (Math.random()-.5)*2*sp; // サイトで基本のぶれが減る
+  p.bl = Math.min(w.maxB, p.bl + w.bloom*(1-ptv(p,sl,'muz'))); p.cd = 1/w.rate; p.lastAtk = now; p.lastShot = now; p.wu[wid] = (p.wu[wid]||0)+1; // マズルで反動が減る
   state.bullets.push({ id:bulletId++, o:p.id, tm:teamOf(p.slot), w:wid, k:w.magic?1:0, d:0, max:w.max, life:1,
     x:p.x+Math.cos(ang)*(R+4), y:p.y+Math.sin(ang)*(R+4), vx:Math.cos(ang)*w.spd, vy:Math.sin(ang)*w.spd });
 }
+
+// ===== 物資：配置・チェスト・持ち物・回復・デスボックス・補給物資（ホストが処理） =====
+let lootId = 0;
+const L = () => state.loot;
+const wpick = arr => { let r = Math.random(); for (const [k,pr] of arr) { if ((r -= pr) < 0) return k; } return arr[arr.length-1][0]; };
+const rarRoll = arr => wpick(arr.map((pr,i)=>[i,pr]));
+const lootTouch = () => { if (L()) L().v++; };
+function mkItem(c, x, y, o){ const it = { id:++lootId, c, x:Math.round(x), y:Math.round(y), n:1 };
+  if (o) for (const k of ['n','w','m','pt','pk','r','own']) if (o[k] !== undefined) it[k] = o[k];
+  L().items.push(it); lootTouch(); return it; }
+function removeItem(it){ it.gone = true; L().items = L().items.filter(x=>x!==it); lootTouch(); }
+// まわりの空いている場所（チェストの中身や捨てた物を置く）
+function dropSpot(x, y){ for (let i=0;i<30;i++){ const a=Math.random()*Math.PI*2, d=22+Math.random()*(30+i*3), px=x+Math.cos(a)*d, py=y+Math.sin(a)*d; if (spotOK(px,py)) return {x:px,y:py}; } return {x,y}; }
+// kind：w武器・a弾薬・m回復・pパーツ。rar＝パーツのレアリティ表
+function rollItem(kind, rar, x, y){
+  if (kind==='w') { const cat = wpick(WCAT), ids = WIDS.filter(k=>WEAPONS[k].cat===cat), k = ids[Math.random()*ids.length|0], w = WEAPONS[k];
+    mkItem('w', x, y, { w:WIDS.indexOf(k), m:w.mag||0, pt:{} });
+    if (w.melee) { const s = dropSpot(x, y); mkItem('st', s.x, s.y, { n:SWORD_STONE }); } return; }
+  if (kind==='a') { mkItem(Math.random()<.5?'as':'al', x, y, { n:AMMO_PACK }); return; }
+  if (kind==='m') { mkItem(wpick(MED_P), x, y); return; }
+  mkItem('p', x, y, { pk:PKEYS[Math.random()*PKEYS.length|0], r:rarRoll(rar) });
+}
+// エリアの物資の量（少・中・多）に合わせて場所を選ぶ
+function lootSpot(){ for (let i=0;i<400;i++){ const x=200+Math.random()*(MAP-400), y=200+Math.random()*(MAP-400), a=areaAt(x,y), w=a?AREA_W[a.loot]||1:1;
+    if (Math.random()*4 < w && spotOK(x,y)) return {x,y}; } return freeSpot(); }
+function spotIn(id){ const a = W.areas.find(a=>a.id===id); if (a) for (let i=0;i<300;i++){ const x=a.r[0]+Math.random()*a.r[2], y=a.r[1]+Math.random()*a.r[3]; if (spotOK(x,y)) return {x,y}; } return lootSpot(); }
+function spawnLoot(){
+  state.loot = { v:1, items:[], chests:[], boxes:[] }; sentLootV = -1;
+  const n = r => Math.round((Array.isArray(r) ? r[0]+Math.random()*(r[1]-r[0]) : r) * LOOT_MUL);
+  for (let i=0;i<n(LOOT_COUNT.chest);i++){ const s=lootSpot(); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y) }); }
+  for (let i=0;i<n(LOOT_COUNT.hchest);i++){ const s=spotIn(HOT_AREAS[i%HOT_AREAS.length]); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y), hi:1 }); }
+  for (const [k,c] of [['w','weapon'],['a','ammo'],['m','med'],['p','part']]) for (let i=0;i<n(LOOT_COUNT[c]);i++){ const s=lootSpot(); rollItem(k, PRAR.ground, s.x, s.y); }
+}
+function openChest(ch){ ch.op = 1; lootTouch();
+  if (ch.sp) { const n = 4 + (Math.random()*3|0), ks = ['w','p','p']; while (ks.length < n) ks.push(Math.random()<.5?'a':'m'); // 補給物資：武器1・パーツ2は確定
+    for (const k of ks) { const s = dropSpot(ch.x, ch.y); rollItem(k, PRAR.drop, s.x, s.y); } return; }
+  const h = ch.hi?1:0, [a,b] = CHEST_N[h], n = a + (Math.random()*(b-a+1)|0), cp = CHEST_P[h];
+  for (let i=0;i<n;i++){ const k = wpick([['w',cp[0]],['a',cp[1]],['m',cp[2]],['p',cp[3]]]), s = dropSpot(ch.x, ch.y); rollItem(k, h?PRAR.hi:PRAR.ground, s.x, s.y); } }
+// 補給物資：次の安全地帯の中に落ちてくる
+function supplyDrop(zn){ const z = zn && !zn.gone ? (zn.next || zn) : { x:MAP/2, y:MAP/2, r:2000 };
+  let s = null; for (let i=0;i<300 && !s;i++){ const a=Math.random()*Math.PI*2, d=Math.sqrt(Math.random())*z.r*0.6, x=z.x+Math.cos(a)*d, y=z.y+Math.sin(a)*d; if (spotOK(x,y)) s={x,y}; }
+  s = s || freeSpot(z.x, z.y, 400); L().chests.push({ id:++lootId, x:Math.round(s.x), y:Math.round(s.y), sp:1 }); lootTouch();
+  feed('補給物資が投下された（ミニマップの青い印）'); }
+// 持ち物（8枠）。同じ種類はまとまる。パーツは1枠に1個
+const bagN = (p, c) => { let n = 0; for (const b of p.bag||[]) if (b && b.c===c) n += b.n; return n; };
+function bagAdd(p, it){ // 入った数を返す
+  const bag = p.bag; if (!bag) return 0;
+  if (it.c==='p') { const i = bag.findIndex(b=>!b); if (i < 0) return 0; bag[i] = { c:'p', n:1, pk:it.pk, r:it.r }; return 1; }
+  const S = ITEMS[it.c].stack, max = ITEMS[it.c].time ? S : Infinity; let left = Math.max(0, Math.min(it.n, max - bagN(p, it.c))); const n0 = left;
+  for (const b of bag) if (left > 0 && b && b.c===it.c && b.n < S) { const k = Math.min(left, S-b.n); b.n += k; left -= k; }
+  for (let i=0; i<bag.length && left>0; i++) if (!bag[i]) { const k = Math.min(left, S); bag[i] = { c:it.c, n:k }; left -= k; }
+  return n0 - left; }
+function bagTake(p, c, n){ let left = n; for (let i=p.bag.length-1; i>=0 && left>0; i--){ const b = p.bag[i]; if (b && b.c===c) { const k = Math.min(left, b.n); b.n -= k; left -= k; if (!b.n) p.bag[i] = null; } } return n - left; }
+function dropItem(p, c, o){ const s = dropSpot(p.x, p.y); return mkItem(c, s.x, s.y, Object.assign({}, o, { own:p.id })); } // 捨てた人は離れるまで自動で拾わない
+// パーツの自動装着：いまの武器→もう1つの順。付いていないか、レアリティが高ければ付ける（外したパーツは地面へ）
+function tryEquip(p, it){
+  for (const s of [p.wp[4], p.wp[4]^1]) { const w = wAt(p, s); if (!w || !PARTS[it.pk].fit(w)) continue;
+    const cur = p.pt[s][it.pk];
+    if (cur === undefined) { p.pt[s][it.pk] = it.r; return true; }
+    if (it.r > cur) { dropItem(p, 'p', { pk:it.pk, r:cur }); p.pt[s][it.pk] = it.r; return true; } }
+  return false; }
+function dropWeapon(p, s){ if (p.wp[s*2] < 0) return; dropItem(p, 'w', { w:p.wp[s*2], m:p.wp[s*2+1], pt:p.pt[s] });
+  p.wp[s*2] = -1; p.wp[s*2+1] = 0; p.pt[s] = {}; if (s === p.wp[4]) { p.rl = 0; p.cast = null; } }
+// 武器を拾う：空いている枠へ。空きがなければ、いまの武器と交換（いまの武器は地面へ）
+function takeWeapon(p, it, remove){
+  let s = p.wp[p.wp[4]*2] < 0 ? p.wp[4] : p.wp[(p.wp[4]^1)*2] < 0 ? p.wp[4]^1 : -1;
+  if (s < 0) { s = p.wp[4]; dropWeapon(p, s); }
+  remove(); p.wp[s*2] = it.w; p.wp[s*2+1] = it.m||0; p.pt[s] = Object.assign({}, it.pt||{});
+  if (s === p.wp[4]) { p.rl = 0; p.bl = 0; p.swt = SWITCH_SEC; } }
+// 歩いて触れた物を自動で拾う（弾薬・回復・砥石・付けられるパーツ。武器は空き枠があるとき）
+function autoPick(p){
+  for (const it of L().items) { if (it.gone || it.own===p.id || Math.abs(it.x-p.x) > AUTO_R || Math.abs(it.y-p.y) > AUTO_R) continue;
+    if (it.c==='w') { if (p.wp[0] < 0 || p.wp[2] < 0) takeWeapon(p, it, ()=>removeItem(it)); continue; }
+    if (it.c==='p') { if (tryEquip(p, it)) removeItem(it); continue; }
+    const k = bagAdd(p, it); if (k) { it.n -= k; if (it.n) lootTouch(); else removeItem(it); } } }
+// 回復：使用時間のあいだ移動が遅く、攻撃できない。使い終わったときに消費（ダウンすると取り消し）
+function startHeal(p, code){ const it = code && ITEMS[code]; if (!it || !it.time || p.down || p.out || p.heal || bagN(p, code) <= 0) return;
+  if ((it.hp && p.hp >= 100) || (it.sh && p.sh >= 100)) return;
+  p.heal = { c:code, t:Date.now()+it.time*1000, dur:it.time*1000 }; }
+function autoHeal(p){ const has = c => bagN(p, c) > 0; // 回復ボタン：シールド→HPの順に、減っている量に合うものを選ぶ
+  if (p.sh < 100) { if (100-p.sh >= 60 && has('s2')) return 's2'; if (has('s1')) return 's1'; if (has('s2')) return 's2'; }
+  if (p.hp < 100) { if (100-p.hp >= 60 && has('m2')) return 'm2'; if (has('m1')) return 'm1'; if (has('m2')) return 'm2'; }
+  return null; }
+// デスボックス：完全脱落した場所に、武器（パーツ付き）と持ち物を入れて置く
+function makeBox(p){ if (!L() || !p.wp) return; const items = [], add = o => items.push(Object.assign({ id:++lootId }, o));
+  for (const s of [0,1]) if (p.wp[s*2] >= 0) add({ c:'w', n:1, w:p.wp[s*2], m:p.wp[s*2+1], pt:p.pt[s] });
+  for (const b of p.bag||[]) if (b) add(Object.assign({}, b));
+  L().boxes.push({ id:++lootId, x:Math.round(p.x), y:Math.round(p.y), tm:p.slot, name:p.name, until:Date.now()+BOX_LIFE, items }); lootTouch(); }
+// プレイヤーの操作（拾う・開ける・使う・捨てる・並べ替え）
+function hostCmd(p, c){
+  if (!p || p.out || state.phase!=='match' || !L() || !c) return; const l = L();
+  const near = (o, r) => o && Math.hypot(o.x-p.x, o.y-p.y) < (r||PICK_R)+20;
+  if (c.c==='heal') { if (p.heal) p.heal = null; else startHeal(p, autoHeal(p)); return; } // もう一度押すと取り消し
+  if (c.c==='use') { const b = p.bag[c.i]; if (b) startHeal(p, b.c); return; }
+  if (c.c==='drop') { const b = p.bag[c.i]; if (!b) return; p.bag[c.i] = null; dropItem(p, b.c, b); return; }
+  if (c.c==='up') { const i = c.i|0; if (i > 0 && i < BAG_SLOTS) [p.bag[i-1], p.bag[i]] = [p.bag[i], p.bag[i-1]]; return; }
+  if (c.c==='dropw') { dropWeapon(p, c.s ? 1 : 0); return; }
+  if (p.down) return;
+  if (c.c==='open') { const ch = l.chests.find(x=>x.id===c.id); if (ch && !ch.op && near(ch)) openChest(ch); return; }
+  if (c.c==='pick') { const it = l.items.find(x=>x.id===c.id); if (!it || !near(it)) return;
+    if (it.c==='w') takeWeapon(p, it, ()=>removeItem(it));
+    else if (it.c==='p') { if (bagAdd(p, it)) removeItem(it); } // 長押し：付けずに持ち物へ
+    else { const k = bagAdd(p, it); if (k) { it.n -= k; if (it.n) lootTouch(); else removeItem(it); } } return; }
+  if (c.c==='take') { const bx = l.boxes.find(x=>x.id===c.id); if (!bx || !near(bx, PICK_R+30)) return; const it = bx.items.find(x=>x.id===c.i); if (!it) return;
+    const rm = () => { bx.items = bx.items.filter(x=>x!==it); lootTouch(); }; // 同じ物は1人しか取れない
+    if (it.c==='w') takeWeapon(p, it, rm);
+    else if (it.c==='p') { if (tryEquip(p, it) || bagAdd(p, it)) rm(); }
+    else { const k = bagAdd(p, it); if (k) { it.n -= k; if (it.n) lootTouch(); else rm(); } } }
+}
+let lootAcc = 0, lootAcc2 = 0;
+function lootTick(dt, now, el, zn){
+  if (!L()) return; const l = L();
+  if ((lootAcc += dt) >= 0.1) { lootAcc = 0; for (const p of state.players) if (alive(p) && p.wp) autoPick(p); }
+  if ((lootAcc2 += dt) < 0.5) return; lootAcc2 = 0;
+  for (let k=0; k<DROP_AT.length; k++) if (el >= DROP_AT[k] && !state.drops[k]) { state.drops[k] = 1; supplyDrop(zn); }
+  // 安全地帯の外の物・デスボックスは数秒で消える。デスボックスは120秒で消える
+  const gone = o => { if (!outOfZone(zn, o.x, o.y)) { o.oz = 0; return false; } o.oz = o.oz || now; return now - o.oz > OUT_VANISH; };
+  const n0 = l.items.length + l.boxes.length;
+  l.items = l.items.filter(i => !i.gone && !gone(i)); l.boxes = l.boxes.filter(b => now < b.until && !gone(b));
+  if (l.items.length + l.boxes.length !== n0) lootTouch();
+  for (const i of l.items) if (i.own) { const o = byId(i.own); if (!o || o.out || Math.hypot(o.x-i.x, o.y-i.y) > AUTO_R*3) delete i.own; } // 捨てた人が離れたら自動で拾える
+}
+// 送るときは配列にまとめて小さくする
+let sentLootV = -1, lootSentAt = 0;
+const packLoot = l => ({ v:l.v, items:l.items.map(i=>[i.id,i.x,i.y,i.c,i.n, i.c==='w'?i.w:i.c==='p'?i.pk:0, i.c==='w'?i.m:i.c==='p'?i.r:0, i.pt||0]),
+  chests:l.chests.map(c=>[c.id,c.x,c.y,c.sp?2:c.hi?1:0,c.op?1:0]), boxes:l.boxes.map(b=>({ id:b.id, x:b.x, y:b.y, tm:b.tm, name:b.name, items:b.items })) });
+const unpackLoot = d => ({ v:d.v, items:d.items.map(a=>Object.assign({ id:a[0], x:a[1], y:a[2], c:a[3], n:a[4] }, a[3]==='w' ? { w:a[5], m:a[6], pt:a[7]||{} } : a[3]==='p' ? { pk:a[5], r:a[6] } : {})),
+  chests:d.chests.map(a=>({ id:a[0], x:a[1], y:a[2], hi:a[3]===1, sp:a[3]===2, op:!!a[4] })), boxes:d.boxes });
 const mostUsed = p => { let b=null, n=0; for (const k in (p.wu||{})) if (p.wu[k] > n) { n = p.wu[k]; b = k; } return b===null ? '－' : WEAPONS[WIDS[b]].name; };
 const byId = id => id ? state.players.find(x=>x.id===id) : null;
 function damage(p, dmg, b, now, center){
@@ -673,7 +856,7 @@ function zoneHit(p, dmg, now){
   if (p.hp <= 0) goDown(p, null, now);
 }
 function goDown(p, by, now){
-  p.hp=0; p.down=true; p.dhp=DOWN_HP; p.dsh=DOWN_SHIELD; p.rv=0; p.downBy = by;
+  p.hp=0; p.down=true; p.heal=null; p.dhp=DOWN_HP; p.dsh=DOWN_SHIELD; p.rv=0; p.downBy = by;
   p.bleedAt = now + BLEED[Math.min(p.downs, BLEED.length-1)]*1000; p.downs++; // ダウンするたび猶予が短くなる
   const k = byId(by); if (k) k.kn++;
   feed(k ? `${k.name} → ${p.name} ダウン` : `${p.name} ダウン（安全地帯の外）`);
@@ -684,7 +867,7 @@ function goDown(p, by, now){
 const killerName = id => { const k=byId(id); return k?k.name:'?'; };
 // 脱落：最後にダウンさせた敵にキルが入る
 function eliminate(p, why){ if (p.out) return; p.out=true; p.down=false; p.life = (Date.now()-state.startAt)/1000;
-  const k = byId(p.downBy); if (k && teamOf(k.slot)!==teamOf(p.slot)) k.kills++;
+  const k = byId(p.downBy); if (k && teamOf(k.slot)!==teamOf(p.slot)) k.kills++; makeBox(p);
   feed(`${p.name} 脱落（${why}）`); }
 
 // BOT（仮）
@@ -694,18 +877,31 @@ const myView = () => ({ w:Math.round(innerWidth/ZOOM/2), h:Math.round(innerHeigh
 function seenBy(q, p){ if (q.bot) return true; const v = q.id===myId ? myView() : (inputs[q.id]&&inputs[q.id].vw ? {w:inputs[q.id].vw,h:inputs[q.id].vh} : {w:300,h:300});
   return Math.abs(p.x-q.x) < v.w-20 && Math.abs(p.y-q.y) < v.h-20; }
 // BOTの武器選び：その距離でどれだけ使えるか（大きいほど良い）
-function botScore(p, slot, d){ const w = WEAPONS[WIDS[p.wp[slot*2]]];
-  if (w.melee) return p.st > 0 ? (d < 70 ? 3 : 0) : -1;
-  if (w.ammo && p.wp[slot*2+1] + p.am[w.ammo==='s'?0:1] <= 0) return -1;
+function botScore(p, slot, d){ const w = wAt(p, slot); if (!w) return -1;
+  if (w.melee) return bagN(p,'st') > 0 ? (d < 70 ? 3 : 0) : -1;
+  if (w.ammo && p.wp[slot*2+1] + bagN(p, ammoCode(w)) <= 0) return -1;
   if (d > w.max) return 0; return d <= w.eff ? 2 + w.dmg*w.rate/200 : 1; }
-const botReach = p => { let r = 0; for (const s of [0,1]) { const w = WEAPONS[WIDS[p.wp[s*2]]]; r = Math.max(r, w.melee ? 220 : w.max*0.9); } return r; }; // 剣だけなら近くの敵へ寄っていく
+const botReach = p => { let r = 0; for (const s of [0,1]) { const w = wAt(p, s); if (!w) continue; r = Math.max(r, w.melee ? 220 : w.max*0.9); } return r; }; // 剣だけなら近くの敵へ寄っていく
+// BOTの物資探し：要る物のうち、いちばん近いもの（チェストは武器・弾・回復が足りないとき）
+function botLoot(p){
+  const l = state.loot; if (!l) return null;
+  const emptyW = p.wp[0] < 0 || p.wp[2] < 0, ws = [wAt(p,0), wAt(p,1)].filter(Boolean);
+  const need = c => { if (c==='w') return emptyW;
+    if (c==='as' || c==='al') return ws.some(w=>w.ammo && ammoCode(w)===c) && bagN(p,c) < 40;
+    if (c==='st') return ws.some(w=>w.melee) && bagN(p,'st') < 3;
+    return !!(ITEMS[c] && ITEMS[c].time) && bagN(p,c) < ITEMS[c].stack; };
+  const meds = bagN(p,'m1')+bagN(p,'m2')+bagN(p,'s1')+bagN(p,'s2');
+  let best = null, bd = 1400;
+  if (emptyW || meds < 2 || need('as') || need('al')) for (const c of l.chests) if (!c.op) { const d = Math.hypot(c.x-p.x, c.y-p.y); if (d < bd) { bd = d; best = { x:c.x, y:c.y+16, o:c, k:'chest' }; } }
+  for (const it of l.items) if (it.c!=='p' && it.own!==p.id && Math.abs(it.x-p.x) < bd && Math.abs(it.y-p.y) < bd && need(it.c)) { const d = Math.hypot(it.x-p.x, it.y-p.y)*0.8; if (d < bd) { bd = d; best = { x:it.x, y:it.y, o:it, k:'item' }; } }
+  return best; }
 function botThink(p, dt){
   const now = Date.now(), myTeam = teamOf(p.slot);
   const mates = state.players.filter(q=>q!==p && teamOf(q.slot)===myTeam && !q.out);
   const humanMate = mates.find(q=>!q.bot && alive(q));
   const humanTeam = state.players.some(q=>teamOf(q.slot)===myTeam && !q.bot);
   p.th = (p.th||0) - dt;
-  if (p.th <= 0) { p.th = 0.3; // 判断は一定間隔で更新
+  if (p.th <= 0 || !p.bwp) { p.th = 0.3; // 判断は一定間隔で更新（行き先がまだないときもすぐ決める）
     let tgt=null, bd=botReach(p);
     for (const q of state.players) { if (q.out || teamOf(q.slot)===myTeam) continue;
       const d=Math.hypot(q.x-p.x,q.y-p.y); if (d<bd && seenBy(q,p) && losClear(p,q)){ bd=d; tgt=q; } }
@@ -726,6 +922,11 @@ function botThink(p, dt){
     else { // 近くをうろうろ。引っかかって動けなければ行き先を変える
       p._st = (p._st||0) + 1; if (p._st >= 4) { p._st = 0; if (Math.hypot(p.x-(p._sx??p.x+99), p.y-(p._sy??p.y)) < 40) { p.bwp = null; p.zwp = null; } p._sx = p.x; p._sy = p.y; }
       if (!p.bwp || Math.hypot(p.bwp.x-p.x,p.bwp.y-p.y)<40 || Math.random()<0.03) { p.bwp = freeSpot(p.x, p.y, 1200); if (zt && !inside(zt, p.bwp, 0.8)) p.bwp = toZone(); } }
+    // 物資：武器がない・弾や回復が少ないときは、近くのチェストや物を取りに行く（人間に付いているBOTは近くだけ）
+    if (!tgt && !p.zoneRun && !p.down) { const lt = botLoot(p);
+      if (lt && (!humanMate || Math.hypot(lt.x-humanMate.x, lt.y-humanMate.y) < 500)) { p.bwp = { x:lt.x, y:lt.y };
+        if (lt.k==='chest' && Math.hypot(lt.o.x-p.x, lt.o.y-p.y) < PICK_R) openChest(lt.o); } }
+    if (!tgt && !p.heal && !p.down && (p.sh < 60 || p.hp < 70)) startHeal(p, autoHeal(p)); // 戦っていないときに回復
   }
   const tgt = state.players.find(q=>q.id===p.tgt && !q.out);
   const rev = state.players.find(q=>q.id===p.revTgt && q.down);
@@ -740,9 +941,10 @@ function botThink(p, dt){
   if (!act && tgt && seenBy(tgt,p)) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y), w = wOf(p);
     // 距離に合った武器へ持ち替える（近い敵には剣、遠い敵には射程の長い武器）
     if (now > (p.botSwAt||0) && botScore(p, p.wp[4]^1, d) > botScore(p, p.wp[4], d) + 0.5) { doSw = true; p.botSwAt = now + 1500; }
-    if (w.melee && d > w.reach + R*0.5 && !run) { mx = (tgt.x-p.x)/d; my = (tgt.y-p.y)/d; } // 剣なら近づく
-    if (!w.melee || d < w.reach + R + 10) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; if (!w.melee) { mx*=0.5; my*=0.5; } } }
-  else if (!tgt && p.wp) { const w = wOf(p); if (w.ammo && p.wp[p.wp[4]*2+1] < w.mag/2 && !p.rl) doRl = true; } // 戦っていないときに弾を込めておく
+    if (w && w.melee && d > w.reach + R*0.5 && !run) { mx = (tgt.x-p.x)/d; my = (tgt.y-p.y)/d; } // 剣なら近づく
+    if (w && (!w.melee || d < w.reach + R + 10)) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; if (!w.melee) { mx*=0.5; my*=0.5; } } }
+  else if (!tgt && p.wp) { const w = wOf(p); if (w && w.ammo && p.wp[p.wp[4]*2+1] < w.mag/2 && !p.rl && bagN(p, ammoCode(w)) > 0) doRl = true;
+    else if (!w && p.wp[(p.wp[4]^1)*2] >= 0 && now > (p.botSwAt||0)) { doSw = true; p.botSwAt = now + 1500; } } // 素手なら、もう1つの武器に持ち替える // 戦っていないときに弾を込めておく
   if (!fire && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
   if (p.down) { fire=false; act=false; }
   return { mx, my, ax, ay, fire, act, doSw, doRl };
@@ -760,9 +962,10 @@ function broadcast(){
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
     players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
-      wp:p.wp, am:p.am, st:p.st, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
+      wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k]),
     ev: state.ev||[], casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
+  if (state.loot && state.loot.v !== sentLootV && now - lootSentAt > 200) { sentLootV = state.loot.v; lootSentAt = now; s.loot = packLoot(state.loot); } // 物資は変わったときだけ送る
   const pkt = { t:'state', s, now };
   for (const id in conns) if (conns[id].open) conns[id].send(pkt);
 }
@@ -781,7 +984,7 @@ function startJoin(){
       if (d.t==='state') {
         clockOffset = d.now - Date.now(); const before = state.phase;
         const prev = {}; for (const p of state.players) prev[p.id] = p;
-        state = d.s; state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3],k:a[4]}));
+        const keepLoot = state.loot; state = d.s; state.loot = d.s.loot ? unpackLoot(d.s.loot) : (state.phase==='lobby' ? null : keepLoot); state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3],k:a[4]}));
         state.casts = d.s.casts.map(a=>({x:a[0],y:a[1],r:a[2],at:Date.now()+a[3]})); takeEvents(state.ev);
         if (state.map && W.id !== state.map) buildWorld(state.map);
         for (const p of state.players) { const o=prev[p.id]; const keep = o && o.dx!==undefined && o.rs===p.rs; p.dx=keep?o.dx:p.x; p.dy=keep?o.dy:p.y; }
@@ -824,12 +1027,12 @@ cv.addEventListener('touchstart',tStart,{passive:false}); cv.addEventListener('t
 cv.addEventListener('touchend',tEnd,{passive:false}); cv.addEventListener('touchcancel',tEnd,{passive:false});
 cv.addEventListener('contextmenu', e=>e.preventDefault());
 let looping = false;
-function enterGame(){ lastEv=0; fxs.length=0; $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
+function enterGame(){ lastEv=0; fxs.length=0; closeBox(); bagOpen=true; toggleBag(); $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
   if (!looping) { looping=true; lastT=performance.now(); requestAnimationFrame(frame); } }
 
 let netAcc = 0;
 function frame(t){
-  const dt = Math.min(0.05, (t-lastT)/1000); lastT = t;
+  const dt = Math.max(0, Math.min(0.05, (t-lastT)/1000)); lastT = t; // 最初のフレームは時刻がずれてマイナスになることがある
   const me = state.phase==='lobby' ? null : localStep(dt);
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
@@ -1113,7 +1316,7 @@ function drawHero(x, y, ax, ay, p, walk, down, sil){
   ctx.save(); ctx.translate(x, y); ctx.scale(CHAR_SCALE, CHAR_SCALE);
   if (down) { ctx.translate(28, -6); ctx.rotate(-Math.PI/2); ctx.globalAlpha *= 0.85; } // 倒れている
   if (dir==='left') ctx.scale(-1, 1);
-  const gun = () => { if (down) return; ctx.save(); if (dir==='left') ctx.scale(-1,1);
+  const gun = () => { if (down || (p.wp && p.wp[p.wp[4]*2] < 0)) return; ctx.save(); if (dir==='left') ctx.scale(-1,1);
     ctx.strokeStyle=S('#2a2d36'); ctx.lineWidth=5; ctx.lineCap='round'; ctx.beginPath();
     ctx.moveTo(ax*4, -22+ay*4); ctx.lineTo(ax*26, -22+ay*20); ctx.stroke(); ctx.restore(); };
   const img = skinImg(p.skin||'default', dir==='left'||dir==='right' ? 'side' : dir);
@@ -1171,12 +1374,14 @@ function drawFx(){
 }
 // ===== 武器の表示（左下、体力の上） =====
 function drawWeaponHud(mp, bx, by){
-  const w = wOf(mp); if (!w) return; const cur = mp.wp[4], mag = mp.wp[cur*2+1], other = WEAPONS[WIDS[mp.wp[(cur^1)*2]]];
+  const w = wOf(mp), cur = mp.wp[4], mag = mp.wp[cur*2+1], ow = wAt(mp, cur^1), other = { name: ow ? ow.name : 'なし' };
+  if (!w) { const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left'; ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif';
+    ctx.fillText('武器なし', bx+4, y+12); ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(ow ? `もう1つ：${ow.name}（切替）` : 'チェストを開けて武器を拾おう', bx+4, y+36); return; }
   const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left';
   ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.fillText(w.name, bx+4, y+12);
   let info = '';
-  if (w.ammo) info = `${mag} / ${w.mag}　${AMMO_NAME[w.ammo]} ${mp.am[w.ammo==='s'?0:1]}`;
-  else if (w.melee) info = `砥石 ${mp.st}`;
+  if (w.ammo) info = `${mag} / ${magCap(mp, cur)}　${AMMO_NAME[w.ammo]} ${bagN(mp, ammoCode(w))}`;
+  else if (w.melee) info = `砥石 ${bagN(mp,'st')}`;
   else info = mp.mm ? '範囲攻撃モード' : '通常攻撃';
   ctx.font='bold 13px sans-serif'; ctx.textAlign='right'; ctx.fillStyle = w.ammo && mag===0 ? '#ff8a8a' : '#ffe28a'; ctx.fillText(info, bx+218, y+12);
   ctx.textAlign='left'; ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(`もう1つ：${other.name}`, bx+4, y+36);
@@ -1204,6 +1409,7 @@ function draw(me){
   drawWater(cx,cy,W,H,t);
   // 弾の影（地面）
   ctx.fillStyle='rgba(0,0,0,.25)'; for (const b of state.bullets){ ctx.beginPath(); ctx.ellipse(b.x,b.y,2.5,1.2,0,0,Math.PI*2); ctx.fill(); }
+  drawLoot(cx, cy, cx+W, cy+H);
   const myTeam = mp ? teamOf(mp.slot) : -1;
   // 画面内の建物・小物だけ取り出して、手前（画面の下）にあるものほど後から描く
   const objs = hQuery(M.hash, cx-120, cy-40, cx+W+120, cy+H+380);
@@ -1270,8 +1476,12 @@ function draw(me){
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
-  if (matchMedia('(pointer:coarse)').matches && (canRevive() || touch.act)) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
-    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center'; ctx.fillText('蘇生', b.x, b.y+5); }
+  const coarse = matchMedia('(pointer:coarse)').matches, rvOK = canRevive();
+  if (coarse && (rvOK || curTarget || touch.act)) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(rvOK ? '蘇生' : curTarget ? ACT_LABEL[curTarget.k] : '', b.x, b.y+5); holdRing(b.x, b.y, b.r+4); }
+  if (mp && alive(mp) && curTarget && !rvOK && !boxOpen) drawPrompt(mp, W, H, coarse);
+  if (mp && alive(mp)) drawHealBar(mp, W, H);
   if (matchMedia('(pointer:coarse)').matches && state.phase==='match' && mp && alive(mp)) for (const b of touchBtns()) {
     const lit = touch.flash && touch.flash.k===b.k && performance.now()-touch.flash.at < 150;
     ctx.fillStyle = lit ? 'rgba(255,226,138,.5)' : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
@@ -1289,9 +1499,94 @@ function draw(me){
   const nLeft = state.players.filter(p=>!p.out).length;
   $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>残り ${nLeft}人${mp?`｜キル ${mp.kills}`:''}`;
   $('feed').innerHTML = (state.feed||[]).filter(f=>Date.now()+(isHost?0:clockOffset)-f.at<6000 && (f.tm===undefined || (mp && f.tm===teamOf(mp.slot)))).map(f=>`<div>${esc(f.t)}</div>`).join('');
-  if (state.phase==='end' && $('result').style.display!=='flex') { $('result').style.display='flex'; renderResult(mp);
+  renderPanels(mp);
+  if (state.phase==='end' && $('result').style.display!=='flex') { closeBox(); bagOpen=true; toggleBag(); $('result').style.display='flex'; renderResult(mp);
     $('btnLobby').style.display=isHost?'block':'none'; $('resWait').style.display=isHost?'none':'block'; }
 }
+// ===== 物資の表示・操作（自分の画面） =====
+let curTarget = null; // いちばん近い「開ける・拾う」対象
+const ACT_LABEL = { open:'開ける', box:'開く', w:'拾う', p:'保管' };
+function nearTarget(pos){ const l = state.loot; if (!l || !pos) return null; let best = null, bd = PICK_R;
+  const chk = (o, k) => { const d = Math.hypot(o.x-pos.x, o.y-pos.y); if (d < bd) { bd = d; best = { k, o }; } };
+  for (const c of l.chests) if (!c.op) chk(c, 'open');
+  for (const b of l.boxes) chk(b, 'box');
+  for (const it of l.items) if ((it.c==='w' || it.c==='p') && Math.abs(it.x-pos.x) < PICK_R && Math.abs(it.y-pos.y) < PICK_R) chk(it, it.c);
+  return best; }
+// 押す：開ける・拾う・デスボックスを開く／長押し：パーツを付けずに保管
+const inter = { on:false, t0:0, done:false, tg:null };
+function interStep(down){ const n = performance.now();
+  if (down && !inter.on) { inter.on = true; inter.t0 = n; inter.done = false; inter.tg = curTarget; }
+  if (!inter.on) return; const tg = inter.tg;
+  if (down) { if (!inter.done && tg && tg.k==='p' && n-inter.t0 >= HOLD_SEC*1000) { inter.done = true; sendCmd({ c:'pick', id:tg.o.id }); } return; }
+  inter.on = false; if (inter.done || !tg || n-inter.t0 >= HOLD_SEC*1000) return;
+  if (tg.k==='open') sendCmd({ c:'open', id:tg.o.id }); else if (tg.k==='w') sendCmd({ c:'pick', id:tg.o.id }); else if (tg.k==='box') openBox(tg.o.id); }
+function sendCmd(c){ if (state.phase!=='match') return;
+  if (isHost) hostCmd(state.players.find(p=>p.id===myId), c); else if (hostConn && hostConn.open) hostConn.send(Object.assign({ t:'cmd' }, c)); }
+const itemText = it => it.c==='w' ? WEAPONS[WIDS[it.w]].name + (Object.keys(it.pt||{}).length ? `＋パーツ${Object.keys(it.pt).length}` : '')
+  : it.c==='p' ? `${PARTS[it.pk].name}（${RARE[it.r]}）` : ITEMS[it.c].name + (it.n > 1 ? ` ×${it.n}` : '');
+const itCol = it => it.c==='p' ? RCOL[it.r] : it.c==='w' ? '#fff' : ITEMS[it.c].col;
+function drawLoot(x0, y0, x1, y1){
+  const l = state.loot; if (!l) return; const inV = o => o.x > x0-40 && o.x < x1+40 && o.y > y0-20 && o.y < y1+60;
+  for (const c of l.chests) if (inV(c)) {
+    const col = c.sp ? ['#2f6fb8','#1d4a80','#e8f0ff'] : c.hi ? ['#7a48b4','#4f2d78','#ffd24a'] : ['#a0703e','#6e4726','#e0bc78'];
+    ctx.fillStyle='rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(c.x, c.y+1, 20, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle=col[1]; ctx.fillRect(c.x-16, c.y-14, 32, 14);
+    if (c.op) { ctx.fillStyle='#1c140c'; ctx.fillRect(c.x-16, c.y-22, 32, 8); ctx.fillStyle=col[0]; ctx.fillRect(c.x-16, c.y-34, 32, 12); } // ふたが開いている
+    else { ctx.fillStyle=col[0]; ctx.fillRect(c.x-16, c.y-24, 32, 10); ctx.fillStyle=col[2]; ctx.fillRect(c.x-2, c.y-17, 4, 6); }
+    if (c.sp && !c.op) { ctx.strokeStyle='#e8f0ff'; ctx.lineWidth=2; ctx.strokeRect(c.x-16, c.y-24, 32, 24); } }
+  for (const b of l.boxes) if (inV(b)) {
+    ctx.fillStyle='rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(b.x, b.y+1, 18, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='#2b2f3a'; ctx.fillRect(b.x-14, b.y-20, 28, 20); ctx.fillStyle=COLORS[b.tm%COLORS.length]; ctx.fillRect(b.x-14, b.y-14, 28, 4);
+    ctx.fillStyle='#fff'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center'; ctx.fillText(b.items.length, b.x, b.y-3); }
+  for (const it of l.items) if (inV(it)) {
+    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(it.x, it.y+1, 9, 3.5, 0, 0, Math.PI*2); ctx.fill();
+    if (it.c==='w') { const w = WEAPONS[WIDS[it.w]]; ctx.save(); ctx.translate(it.x, it.y-5); ctx.rotate(-0.35);
+      ctx.fillStyle = w.melee ? '#d8dee4' : w.magic ? '#b98aff' : '#2a2d36'; ctx.fillRect(-14,-3,28,6); ctx.fillStyle = w.magic ? '#ffe28a' : '#8a6a44'; ctx.fillRect(-14,-3,6,8); ctx.restore(); }
+    else if (it.c==='p') { ctx.fillStyle=RCOL[it.r]; ctx.beginPath(); ctx.moveTo(it.x, it.y-14); ctx.lineTo(it.x+7, it.y-7); ctx.lineTo(it.x, it.y); ctx.lineTo(it.x-7, it.y-7); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,.5)'; ctx.lineWidth=1; ctx.stroke(); }
+    else if (ITEMS[it.c].time) { ctx.fillStyle=ITEMS[it.c].col; ctx.beginPath(); ctx.arc(it.x, it.y-7, 7, 0, Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.fillRect(it.x-1.5, it.y-11, 3, 8); ctx.fillRect(it.x-4, it.y-8.5, 8, 3); }
+    else if (it.c==='st') { ctx.fillStyle=ITEMS.st.col; ctx.beginPath(); ctx.ellipse(it.x, it.y-4, 8, 4, 0, 0, Math.PI*2); ctx.fill(); }
+    else { ctx.fillStyle=ITEMS[it.c].col; ctx.fillRect(it.x-7, it.y-11, 14, 10); ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(it.x-7, it.y-5, 14, 2); } }
+  if (curTarget) { const o = curTarget.o; ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(o.x, o.y, 22, 9, 0, 0, Math.PI*2); ctx.stroke(); }
+}
+function holdRing(x, y, r){ if (!inter.on || !inter.tg || inter.tg.k!=='p' || inter.done) return; const f = Math.min(1, (performance.now()-inter.t0)/(HOLD_SEC*1000));
+  ctx.strokeStyle='#ffe28a'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(x, y, r, -Math.PI/2, -Math.PI/2+Math.PI*2*f); ctx.stroke(); }
+function drawPrompt(mp, W, H, coarse){ const tg = curTarget, o = tg.o;
+  const t = tg.k==='open' ? (o.sp ? '補給物資を開ける' : o.hi ? '高級チェストを開ける' : 'チェストを開ける') : tg.k==='box' ? `${o.name}のデスボックスを開く`
+    : tg.k==='w' ? ((mp.wp[0] < 0 || mp.wp[2] < 0) ? '拾う：' : '持ち替える：') + itemText(o) : '長押しで保管：' + itemText(o);
+  const s = (coarse ? '' : '[E] ') + t, y = H - 150 - SAFE.b;
+  ctx.save(); ctx.textAlign='center'; ctx.font='bold 15px sans-serif'; const tw = ctx.measureText(s).width;
+  ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(W/2-tw/2-10, y-18, tw+20, 26); ctx.fillStyle = tg.k==='p' ? RCOL[o.r] : '#fff'; ctx.fillText(s, W/2, y);
+  holdRing(W/2-tw/2-22, y-5, 9); ctx.restore(); }
+function drawHealBar(mp, W, H){ const hl = isHost ? (mp.heal ? Math.min(1, 1-(mp.heal.t-Date.now())/mp.heal.dur) : 0) : mp.hl, hc = isHost ? (mp.heal && mp.heal.c) : mp.hc;
+  if (!hl || !hc) return; const y = H/2 + 96; ctx.fillStyle='#000a'; ctx.fillRect(W/2-90, y-16, 180, 26);
+  ctx.fillStyle = ITEMS[hc].col; ctx.fillRect(W/2-86, y+2, 172*hl, 5); ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(`回復中：${ITEMS[hc].name}`, W/2, y-2); }
+// 持ち物とデスボックスの画面（HTML）
+let boxOpen = null, bagOpen = false, panelAt = 0, lastBoxH = '', lastBagH = '';
+function toggleBag(){ bagOpen = !bagOpen && state.phase==='match'; lastBagH = ''; $('bagp').style.display = bagOpen ? 'block' : 'none'; }
+function openBox(id){ boxOpen = id; lastBoxH = ''; $('boxp').style.display = 'block'; panelAt = 0; }
+function closeBox(){ boxOpen = null; $('boxp').style.display = 'none'; }
+const cmdBtn = (label, c, cls) => `<button class="${cls||''}" data-c="${esc(JSON.stringify(c))}">${label}</button>`;
+function renderPanels(mp){
+  if (performance.now() - panelAt < 150) return; panelAt = performance.now();
+  if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen);
+    if (!b || !mp || !alive(mp) || (local && Math.hypot(b.x-local.x, b.y-local.y) > PICK_R+40)) closeBox();
+    else { const h = `<h3><span>${esc(b.name)}のデスボックス</span>${cmdBtn('閉じる',{x:'box'},'sec')}</h3>` + (b.items.length
+        ? b.items.map(it=>`<div class="it"><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>');
+      if (h !== lastBoxH) { lastBoxH = h; $('boxp').innerHTML = h; } } }
+  if (bagOpen && mp && mp.bag) {
+    const ws = [0,1].map(s => { const w = wAt(mp, s); if (!w) return `<div class="it"><span class="sub">武器${s+1}：なし</span></div>`;
+      const pt = (mp.pt && mp.pt[s]) || {}, ps = Object.keys(pt).map(k=>`<span style="color:${RCOL[pt[k]]}">${PARTS[k].name}</span>`).join('・');
+      return `<div class="it"><span>${s===mp.wp[4]?'▶ ':''}${w.name}<br><small>${ps || 'パーツなし'}</small></span>${cmdBtn('捨てる',{c:'dropw',s},'sec')}</div>`; }).join('');
+    const bs = mp.bag.map((b,i) => b ? `<div class="it"><span style="color:${itCol(b)}">${esc(itemText(b))}</span>${ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : ''}${i ? cmdBtn('↑',{c:'up',i},'sec') : ''}${cmdBtn('捨てる',{c:'drop',i},'sec')}</div>`
+      : `<div class="it"><span class="sub">（空き）</span></div>`).join('');
+    const h = `<h3><span>持ち物</span>${cmdBtn('閉じる',{x:'bag'},'sec')}</h3>${ws}<div class="sub" style="margin:8px 0 2px">所持品（${BAG_SLOTS}枠）</div>${bs}`;
+    if (h !== lastBagH) { lastBagH = h; $('bagp').innerHTML = h; } }
+}
+for (const id of ['boxp','bagp']) { const el = $(id);
+  el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !b.dataset.c) return; const c = JSON.parse(b.dataset.c);
+    if (c.x==='box') closeBox(); else if (c.x==='bag') toggleBag(); else sendCmd(c); });
+  for (const ev of ['mousedown','mouseup','wheel','touchstart','touchend']) el.addEventListener(ev, e => e.stopPropagation(), { passive:true }); } // パネルを押しても攻撃しない
 // ===== ミニマップ（右上）：地形・安全地帯・自分と味方 =====
 const MINI = 120; let miniCv = null, miniId = null;
 function drawMini(zn, pos, mp, SW){
@@ -1308,6 +1603,7 @@ function drawMini(zn, pos, mp, SW){
     if (zn.next) { ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.setLineDash([3,2]); ctx.beginPath(); ctx.arc(x0+zn.next.x*k, y0+zn.next.y*k, zn.next.r*k, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } }
   if (mp) for (const p of state.players) { if (p.out || p.id===myId || teamOf(p.slot)!==teamOf(mp.slot)) continue;
     ctx.fillStyle='#5f8'; ctx.beginPath(); ctx.arc(x0+(isHost?p.x:p.dx)*k, y0+(isHost?p.y:p.dy)*k, 2.5, 0, Math.PI*2); ctx.fill(); }
+  if (state.loot) for (const c of state.loot.chests) if (c.sp && !c.op) { ctx.fillStyle='#4aa3ff'; ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.fillRect(x0+c.x*k-3, y0+c.y*k-3, 6, 6); ctx.strokeRect(x0+c.x*k-3, y0+c.y*k-3, 6, 6); }
   if (pos) { ctx.fillStyle='#fff'; ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x0+pos.x*k, y0+pos.y*k, 3.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
   ctx.restore();
 }
