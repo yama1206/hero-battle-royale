@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.5</div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.6</div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1350,7 +1350,7 @@ function drawPlayer(v){
 // キャラ1人を描く（画像があれば画像、なければ仮の絵）
 function drawHero(x, y, ax, ay, p, walk, down, sil, fx, fy){
   const dir = down ? 'front' : dirOf(fx ?? ax, fy ?? ay); // 体は向き(fx,fy)、武器は照準(ax,ay)
-  const col = COLORS[p.slot], S = c => sil ? '#bfffd4' : c;
+  const col = COLORS[p.slot], S = c => sil ? (sil===true ? '#bfffd4' : sil) : c;
   ctx.save(); ctx.translate(x, y); ctx.scale(CHAR_SCALE, CHAR_SCALE);
   if (down) { ctx.translate(28, -6); ctx.rotate(-Math.PI/2); ctx.globalAlpha *= 0.85; } // 倒れている
   if (dir==='left') ctx.scale(-1, 1);
@@ -1485,16 +1485,16 @@ function draw(me){
     if (zn.next && !zn.shrinking) { ctx.save(); ctx.setLineDash([24,16]); ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=3;
       ctx.beginPath(); ctx.arc(zn.next.x, zn.next.y, zn.next.r, 0, Math.PI*2); ctx.stroke(); ctx.restore(); }
   }
-  // 建物・木・屋根の裏に隠れているか（自分・味方はシルエットで見せる。敵は名前も出さない）
+  // 建物・木・屋根の裏に隠れているか（裏にいる人はシルエットで見せる）
   const hidden = v => { const x0=v.x-10, x1=v.x+10, y0=v.y-SPRITE_H*CHAR_SCALE, y1=v.y;
     return occ.some(o => (o.ht!==undefined && o.k ? o.y+o.h > v.y : true) && x1>o.ib[0] && x0<o.ib[0]+o.ib[2] && y1>o.ib[1] && y0<o.ib[1]+o.ib[3]); };
-  for (const v of vis) { v.hid = hidden(v); if (v.hid && (v.mine || v.ally)) {
-      ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true, v.fx, v.fy); ctx.restore(); } }
+  for (const v of vis) { v.hid = hidden(v); if (v.hid) { // 裏にいる人はシルエットで見せる（味方は緑、敵は赤）
+      ctx.save(); ctx.globalAlpha=0.5; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, (v.mine || v.ally) ? true : '#ff8a8a', v.fx, v.fy); ctx.restore(); } }
   // 弾（体の高さ）
   for (const b of state.bullets){ ctx.fillStyle = b.k===1 ? '#d9a2ff' : '#ffe28a'; ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,b.k===1?4:2.5,0,Math.PI*2); ctx.fill(); }
   drawFx();
   // 名前・体力（いちばん上に）
-  for (const v of vis) if (!v.hid || v.mine || v.ally) drawLabel(v);
+  for (const v of vis) drawLabel(v);
   ctx.restore(); W=innerWidth; H=innerHeight; // ここから画面のUI
   // いまいるエリアの名前
   const ar = areaAt(cam.x, cam.y);
@@ -1745,10 +1745,11 @@ const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビ�
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
 const BTN_REST = ['十字↑','十字↓','十字←','十字→','ホーム'];
 const bn = i => ((PADS[cfg.padType]||PADS.xbox).b.concat(BTN_REST))[i] || ('ボタン'+i); // いまのボタン表示での名前
-const cfg = { vol:70, assist:1, dmgNum:1, padType:'xbox', bind:{...BIND0} };
+const cfg = { bgm:40, vol:70, assist:1, dmgNum:1, padType:'xbox', bind:{...BIND0} };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){} cfg.bind = { ...BIND0, ...(cfg.bind||{}) }; if (!PADS[cfg.padType]) cfg.padType = 'xbox';
 const saveCfg = () => { try { localStorage.setItem('hbr_cfg', JSON.stringify(cfg)); } catch(e){} };
 const SETS = [
+  { k:'bgm', name:'BGMの音量', show:()=>cfg.bgm+'%', adj:d=>{ cfg.bgm = Math.max(0, Math.min(100, cfg.bgm+d*10)); } },
   { k:'vol', name:'効果音の音量', show:()=>cfg.vol+'%', adj:d=>{ cfg.vol = Math.max(0, Math.min(100, cfg.vol+d*10)); } },
   { k:'assist', name:'エイムアシスト', show:()=>cfg.assist?'オン':'オフ', adj:()=>{ cfg.assist ^= 1; } },
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
@@ -1845,6 +1846,25 @@ function sfx(k, x, y){ if (!AC || AC.state!=='running' || !cfg.vol || !SND[k]) r
   if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(AC.destination); } else g.connect(AC.destination);
   SND[k](AC.currentTime, out); }
 let camPos = null, sndPrev = null;
+// ===== 戦闘中のBGM（その場で作曲・演奏。Am→F→C→G をくり返す） =====
+const BGM = { bpm:150, next:0, step:0, g:null, lp:null };
+const mf = m => 440 * 2 ** ((m-69)/12);
+const BGM_CH = [ { r:45, t:[57,60,64] }, { r:41, t:[53,57,60] }, { r:48, t:[55,60,64] }, { r:43, t:[55,59,62] } ];
+const BGM_ARP = [0,1,2,3,2,1,0,1,2,3,4,3,2,1,2,3];
+function bgmTick(){
+  if (!AC || AC.state!=='running' || !cfg.bgm || state.phase!=='match') { BGM.next = 0; return; }
+  if (!BGM.g) { BGM.g = AC.createGain(); BGM.g.connect(AC.destination); BGM.lp = AC.createBiquadFilter(); BGM.lp.type = 'lowpass'; BGM.lp.frequency.value = 700; BGM.lp.connect(BGM.g); }
+  BGM.g.gain.value = cfg.bgm/100*0.22;
+  const sd = 60/BGM.bpm/4, now = AC.currentTime; if (BGM.next < now) { BGM.next = now + 0.05; }
+  while (BGM.next < now + 0.25) { const t = BGM.next, i = BGM.step, b = i & 15, bar = (i >> 4), ch = BGM_CH[bar % 4], o = BGM.g, hi = (bar >> 2) % 2;
+    if (b % 4 === 0) tn(t, .16, .9, 150, 45, 'sine', o);                                   // キック
+    if (b === 4 || b === 12 || (bar % 4 === 3 && b === 14)) { nz(t, .12, .45, 1800, .7, 'bandpass', o); tn(t, .07, .25, 220, 120, 'triangle', o); } // スネア
+    if (b % 2 === 0) nz(t, .03, b % 4 ? .12 : .06, 8000, 1, 'highpass', o);                // ハイハット
+    if (b % 2 === 0) tn(t, sd*1.8, .55, mf(ch.r + (b % 4 ? 12 : 0)), 0, 'sawtooth', BGM.lp); // ベース
+    const ts = [...ch.t, ch.t[0]+12, ch.t[1]+12]; tn(t, sd*0.9, .09, mf(ts[BGM_ARP[b]] + 12*hi), 0, 'triangle', o); // アルペジオ（4小節ごとに1オクターブ上下）
+    BGM.next += sd; BGM.step++; }
+}
+setInterval(bgmTick, 50);
 const shotSnd = (x, y, wid) => { const w = WEAPONS[WIDS[wid]]; if (w) sfx(w.magic ? '魔法' : w.cat, x, y); };
 // 自分の状態の変化から鳴らす（リロード・持ち替え・拾う・被弾・回復・ダウン）
 function selfSounds(mp){
