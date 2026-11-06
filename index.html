@@ -44,7 +44,7 @@
   #bagp .wn { font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #bagp .wi svg { width:100%; height:22px; } #bagp .wa { font-weight:700; color:#ffe28a; }
   #bagp .pts { display:flex; gap:3px; margin-top:3px; } #bagp i.pt { width:16px; height:16px; border:1px dashed #4a5370; border-radius:4px; display:block; } #bagp i.pt svg { width:100%; height:100%; display:block; }
   #bagp button.sl { aspect-ratio:1; width:100%; } #bagp .sl svg { width:80%; height:80%; } #bagp .sl b { position:absolute; right:3px; bottom:1px; font-size:11px; text-shadow:0 0 3px #000; }
-  #bagp button.on, .panel .it.on { outline:3px solid #ffe14a; outline-offset:1px; box-shadow:0 0 10px #ffe14a; animation:cur 1s ease-in-out infinite alternate; } .panel .it.on { outline-offset:-2px; border-radius:6px; background:rgba(255,225,74,.12); } @keyframes cur { from { outline-color:#ffe14a; } to { outline-color:#fff6b8; } } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
+  #bagp button.on, .panel .it.on { outline:3px solid #ffe14a; outline-offset:1px; box-shadow:0 0 10px #ffe14a; animation:cur 1s ease-in-out infinite alternate; } .panel .it.on { outline-offset:-2px; border-radius:6px; background:rgba(255,225,74,.12); } #ptr { position:fixed; left:0; top:0; width:26px; height:26px; z-index:50; pointer-events:none; display:none; filter:drop-shadow(0 1px 2px #000); } .panel button.hov { filter:brightness(1.35); box-shadow:0 0 0 2px #fff; } @keyframes cur { from { outline-color:#ffe14a; } to { outline-color:#fff6b8; } } #bagp .det { display:flex; align-items:center; gap:6px; min-height:44px; margin-top:8px; padding:6px; background:#141927; border-radius:8px; } #bagp .det > span { flex:1; }
   .panel .hint { margin:6px 0 0; font-size:11px; line-height:1.5; } i.ic { width:26px; height:26px; display:block; flex:none; } i.ic svg { width:100%; height:100%; }
   #setp .srow.on { background:rgba(255,179,71,.18); } #setp .sv { width:56px; text-align:center; }
   .padf { outline:3px solid #fff !important; outline-offset:2px; } .padedit { outline-color:#ffb347 !important; }
@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.2</div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.3</div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -78,7 +78,7 @@
   <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで攻撃・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・LBで魔法の範囲攻撃モード／PC WASD移動・マウス照準・クリック攻撃・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復<br>持ち物：スタート・I・Tab（スマホは持ち物ボタン）／設定：スタート長押し・Esc（スマホは持ち物ボタン長押し）／マップ：セレクト・M（スマホはミニマップを押す）<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
 </div></div>
 
-<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="setp" class="panel"></div><div id="boxp" class="panel"></div>
+<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="setp" class="panel"></div><div id="boxp" class="panel"></div><div id="ptr"><svg viewBox="0 0 26 26"><path d="M3 2l17 11-8 1 5 9-3 2-5-9-6 6z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
   <div id="result"><div class="card"><div id="resTxt"></div><button id="btnLobby" style="display:none">ロビーに戻る</button><div class="sub" id="resWait" style="margin:10px 0 0">ホストがロビーに戻すのを待っています…</div></div></div>
 </div>
 
@@ -518,7 +518,8 @@ function readInput(me){
     if (edge(8)) toggleMap();
     const ui = setOpen || bagOpen || mapOpen || !!boxOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
     if (ui) uiPad(edge);
-    if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; }
+    ptrUpdate(ui && !mapOpen ? lx||rx : 0, ui && !mapOpen ? ly||ry : 0);
+    if (ptr.on) { /* カーソル操作中はスティックで動かない */ } else { if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; } }
     if (!setOpen && ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5))) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
     if (!ui) { if (pr(2) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || pr(2); else if (edge(2)) ctr.rl++;
@@ -1611,7 +1612,7 @@ function renderPanels(mp){
   if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen);
     if (!b || !mp || !alive(mp) || (local && Math.hypot(b.x-local.x, b.y-local.y) > PICK_R+40)) closeBox();
     else { const h = `<h3><span>${esc(b.name)}のデスボックス</span>${cmdBtn('閉じる',{x:'box'},'sec')}</h3>` + (b.items.length
-        ? b.items.map((it,k)=>`<div class="it${k===Math.min(boxSel,b.items.length-1)?' on':''}"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>') + (navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? '<div class="sub hint">十字キー上下：選ぶ　A：取る　B：閉じる</div>' : '');
+        ? b.items.map(it=>`<div class="it"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>') + (navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? '<div class="sub hint">スティック：カーソル　A：押す　B：閉じる</div>' : '');
       if (h !== lastBoxH) { lastBoxH = h; $('boxp').innerHTML = h; } } }
   if (bagOpen && mp && mp.bag) { const h = invHTML(mp); if (h !== lastBagH) { lastBagH = h; $('bagp').innerHTML = h; } }
 }
@@ -1698,21 +1699,31 @@ function invHTML(mp){
     det = b ? `<span style="color:${itCol(b)}">${esc(itemText(b))}${b.c==='p'?`<br><small>${partDesc(b.pk)}</small>`:ITEMS[b.c]&&ITEMS[b.c].time?`<br><small>${ITEMS[b.c].hp?'HP':'シールド'}+${ITEMS[b.c].hp||ITEMS[b.c].sh}・${ITEMS[b.c].time}秒</small>`:''}</span>`
         + (ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : '') + (i ? cmdBtn('◀',{c:'up',i},'sec') : '') + cmdBtn('捨てる',{c:'drop',i},'sec')
       : `<span class="sub">空き</span>`; }
-  const pad = navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? '<div class="sub hint">十字キー：選ぶ　A：使う／持ち替え　X：捨てる　B：閉じる</div>' : '';
+  const pad = navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? '<div class="sub hint">スティック：カーソル　A：押す　X：選んでいる物を捨てる　B：閉じる</div>' : '';
   return `<h3><span>持ち物</span>${cmdBtn('閉じる',{x:'bag'},'sec')}</h3><div class="wrow">${wcard(0)}${wcard(1)}</div><div class="grid">${slots}</div><div class="det">${det}</div>${pad}`;
 }
 const partDesc = k => ({ muz:'反動を減らす', mgs:'装弾数アップ（小口径）', mgl:'装弾数アップ（大口径）', stk:'ぶれが早く戻る', grp:'持ち替えが速い（剣は硬直短縮）', sgt:'基本のぶれを減らす', amp:'MP消費を減らす' })[k] || '';
 // ゲームパッドで画面を操作する（十字キー・A・B・X）
+// ゲームパッドのカーソル（パソコンのマウスのように自由に動かす）
+const ptr = { x:0, y:0, on:false, at:0, hov:null };
+function ptrUpdate(sx, sy){
+  const want = !!(setOpen || bagOpen || boxOpen), n = performance.now(), el = $('ptr');
+  if (want && !ptr.on) { const pn = $(boxOpen ? 'boxp' : bagOpen ? 'bagp' : 'setp').getBoundingClientRect(); ptr.x = pn.left + pn.width/2; ptr.y = pn.top + pn.height/2; ptr.at = n; }
+  ptr.on = want; el.style.display = want ? 'block' : 'none'; if (!want) { if (ptr.hov) ptr.hov.classList.remove('hov'); ptr.hov = null; return; }
+  const dt = Math.min(0.05, (n - ptr.at)/1000); ptr.at = n; const m = Math.hypot(sx, sy), sp = 260 + 700*m*m;
+  ptr.x = Math.max(0, Math.min(innerWidth-4, ptr.x + sx*sp*dt)); ptr.y = Math.max(0, Math.min(innerHeight-4, ptr.y + sy*sp*dt));
+  el.style.transform = `translate(${ptr.x-3}px,${ptr.y-2}px)`;
+  const t = document.elementFromPoint(ptr.x, ptr.y), b = t && t.closest('.panel button');
+  if (b !== ptr.hov) { if (ptr.hov) ptr.hov.classList.remove('hov'); ptr.hov = b; } if (b) b.classList.add('hov');
+}
+function ptrClick(){ const t = document.elementFromPoint(ptr.x, ptr.y), b = t && t.closest('.panel button'); if (b) b.click(); }
 function uiPad(edge){
-  const U = edge(12), D = edge(13), Lf = edge(14), Rt = edge(15), A = edge(0), B = edge(1), X = edge(2);
+  const U = edge(12), D = edge(13), Lf = edge(14), Rt = edge(15), A = false, B = edge(1), X = edge(2);
+  if (edge(0)) { ptrClick(); return; }
   if (setOpen) { if (U) setSel = (setSel+SETS.length-1)%SETS.length; if (D) setSel = (setSel+1)%SETS.length;
     if (Lf) setAdj(-1); if (Rt || A) setAdj(1); if (B) closeSettings(); if (U||D||Lf||Rt||A) { renderSettings(); sfx('ui'); } return; }
   if (mapOpen) { if (B) toggleMap(); return; }
-  if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen), n = b ? b.items.length : 0; if (B) { closeBox(); sfx('ui'); return; } if (!n) return;
-    boxSel = Math.min(boxSel, n-1); const old = boxSel;
-    if (U) boxSel = (boxSel+n-1)%n; if (D) boxSel = (boxSel+1)%n;
-    if (A) sendCmd({ c:'take', id:b.id, i:b.items[boxSel].id });
-    if (boxSel !== old || A) { lastBoxH = ''; panelAt = 0; sfx('ui'); } return; }
+  if (boxOpen) { if (B) { closeBox(); sfx('ui'); } return; }
   if (!bagOpen) return; const mp = state.players.find(p=>p.id===myId); if (!mp || !mp.bag) return;
   const old = invSel;
   if (invSel < 2) { if (Lf||Rt) invSel ^= 1; if (D) invSel = invSel ? 4 : 2; }
