@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.8<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.0<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -145,7 +145,11 @@ const AMMO_PACK = 20, SWORD_STONE = 2;          // 仮：弾薬1個の弾数／�
 const DROP_AT = [180, 360, 480];                // 補給物資の投下（3分・6分・8分）
 const BOX_LIFE = 120000, OUT_VANISH = 5000;     // デスボックスは120秒。安全地帯の外の物が消えるまで5秒（仮）
 const BAG_SLOTS = 8, PICK_R = 50, AUTO_R = R+10, HOLD_SEC = 0.45, HEAL_MOVE = 0.5; // 拾える距離・長押しの長さ・回復中の移動速度は仮
-const CRAWL = 60;                    // ダウン中の這う速度
+const CRAWL = 60;
+// 段階7：ダッシュ・回避・乗り越え（数値は仮）
+const DASH_MUL = 1.4, DASH_B = .06;          // ダッシュの速度倍率／ダッシュ中に増えるぶれ
+const DODGE_SPD = 600, DODGE_T = .25, DODGE_CD = 3; // 回避の速さ・時間（＝無敵時間）・クールタイム
+const VAULT_EXT = .35;                       // 乗り越え：障害物の上にいる間は最大この秒数まで回避を延ばす                    // ダウン中の這う速度
 const DOWN_HP = 100;                 // ダウン中の体力
 const DOWN_SHIELD = 200;             // ダウンシールド耐久（仕様：ノーマル200。レアリティで変わるのは後で）
 const DSHIELD_ARC = Math.PI/3;       // ダウンシールドの守る範囲（左右60°）
@@ -413,9 +417,9 @@ function wetAt(x,y){ if (x<0||y<0||x>MAP||y>MAP) return true;
   return false; }
 const wetFoot = (x,y) => wetAt(x,y)||wetAt(x+R*.8,y)||wetAt(x-R*.8,y)||wetAt(x,y+R*.5)||wetAt(x,y-R*.5);
 const _near = [];
-function pushOut(p, px, py){
+function pushOut(p, px, py, skipLow){
   _near.length = 0; hQuery(W.hash, p.x-R, p.y-R, p.x+R, p.y+R, _near);
-  for (const o of _near) {
+  for (const o of _near) { if (skipLow && o.low) continue;
     const nx = Math.max(o.x, Math.min(p.x, o.x+o.w)), ny = Math.max(o.y, Math.min(p.y, o.y+o.h));
     const dx = p.x-nx, dy = p.y-ny, d = Math.hypot(dx,dy);
     if (d < R) { if (d===0) { p.y = o.y - R; } else { p.x = nx + dx/d*R; p.y = ny + dy/d*R; } }
@@ -424,6 +428,8 @@ function pushOut(p, px, py){
   if (px!==undefined && wetFoot(p.x,p.y) && !wetFoot(px,py)) { // 水に入ろうとしたら、入らない方向だけ動く
     if (!wetFoot(p.x,py)) p.y = py; else if (!wetFoot(px,p.y)) p.x = px; else { p.x = px; p.y = py; } }
 }
+function onLow(p){ _near.length = 0; hQuery(W.hash, p.x-R, p.y-R, p.x+R, p.y+R, _near);
+  return _near.some(o => o.low && Math.hypot(p.x-Math.max(o.x, Math.min(p.x, o.x+o.w)), p.y-Math.max(o.y, Math.min(p.y, o.y+o.h))) < R); }
 function inObs(x,y){ const a = W.hash.get(Math.floor(x/HC)+Math.floor(y/HC)*4096); if (!a) return false;
   for (const o of a) if (!o.low && x>o.x && x<o.x+o.w && y>o.y && y<o.y+o.h) return true; return false; }
 const spotOK = (x,y) => x>R && y>R && x<MAP-R && y<MAP-R && !wetFoot(x,y) &&
@@ -476,10 +482,11 @@ function touchBtns(){ const b = actBtn(), me = state.players.find(p=>p.id===myId
            { k:'rl', x:b.x, y:b.y-82, r:28, label:'リロード', show:!!(w && w.ammo) },
            { k:'mm', x:b.x-88, y:b.y-40, r:28, label:me&&me.mm?'通常':'範囲', show:!!(w && w.magic) },
            { k:'heal', x:b.x, y:b.y-146, r:28, label:'回復' },
+           { k:'dg', x:b.x-88, y:b.y+112, r:28, label:'回避' },
            { k:'bag', x:b.x-152, y:b.y+44, r:28, label:'持ち物' } ].filter(x=>x.show!==false); }
-const ctr = { sw:0, rl:0, mm:0 }; // 押した回数（ホストは増えた分だけ処理する）
+let keyDodge = false; const ctr = { sw:0, rl:0, mm:0, dg:0 }; // 押した回数（ホストは増えた分だけ処理する）
 addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
-  if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
+  if (e.code==='Space' && state.phase==='match' && !(e.target && e.target.tagName==='INPUT')) { e.preventDefault(); keyDodge = true; } if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
   if (e.code==='KeyH') sendCmd({ c:'heal' }); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); }
   if (e.code==='KeyM') toggleMap(); if (e.code==='Escape') { if (setOpen) closeSettings(); else if (mapOpen) toggleMap(); else if (bagOpen) toggleBag(); else openSettings(); } });
 addEventListener('keyup', e => keys[e.code]=false);
@@ -490,7 +497,7 @@ function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
     if (mapOpen) { toggleMap(); continue; }
     if ((canRevive() || curTarget) && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
-    if (tb) { if (tb.k==='heal') sendCmd({ c:'heal' }); else if (tb.k==='bag') { touch.bag = { id:t.identifier, at:performance.now() }; holdTimer = setTimeout(()=>{ if (touch.bag) { touch.bag = null; openSettings(); } }, LONG_MS); } else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
+    if (tb) { if (tb.k==='heal') sendCmd({ c:'heal' }); else if (tb.k==='dg') touch.dg = true; else if (tb.k==='bag') { touch.bag = { id:t.identifier, at:performance.now() }; holdTimer = setTimeout(()=>{ if (touch.bag) { touch.bag = null; openSettings(); } }, LONG_MS); } else ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
     if (state.phase==='match' && miniHit(t.clientX, t.clientY)) { toggleMap(); continue; } // ミニマップを押すと大きなマップ
     const side = t.clientX < innerWidth/2 ? 'move':'aim';
     if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
@@ -503,7 +510,7 @@ const dz = v => Math.abs(v) < 0.2 ? 0 : v;
 
 let lastAim = { x:1, y:0 }, lastFace = { x:1, y:0 }, gpPrev = [], mouseAt = 0, gpHold = {};
 function readInput(me){
-  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act, aiming=false;
+  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act, aiming=false, dash=!!(keys.ShiftLeft||keys.ShiftRight), dodge=keyDodge; keyDodge=false;
   if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
   if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; aiming = mouse.down || performance.now()-mouseAt < 600; }
@@ -526,10 +533,11 @@ function readInput(me){
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
     if (!ui) { if (bp(K.act) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || bp(K.act); else if (be(K.act)) ctr.rl++;
       if (be(K.heal)) sendCmd({ c:'heal' });
-      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; }
+      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; if (be(K.dodge)) dodge = true; if (bp(K.dash)) dash = true; }
     gpPrev = gp.buttons.map(b=>b.pressed); }
   if (setOpen) { mx = my = 0; fire = false; }
-  if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
+  if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; if (Math.hypot(touch.move.x-touch.move.ox, touch.move.y-touch.move.oy) > 95) dash = true; } // スマホ：スティックを大きく倒すとダッシュ
+  if (touch.dg) { dodge = true; touch.dg = false; }
   if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; ta=true; aiming=true; } } // スマホは単発武器も押しっぱなしで連射
   const m = Math.hypot(mx,my); if (m>1){ mx/=m; my/=m; }
   if (ax||ay) { const a=Math.hypot(ax,ay); lastAim={x:ax/a,y:ay/a}; }
@@ -540,7 +548,7 @@ function readInput(me){
   else if (fire) lastFace = { x:lastAim.x, y:lastAim.y };
   let aim = lastAim;
   if (assist && me && cfg.assist) aim = aimAssist(me, aim);
-  return { mx, my, ax:aim.x, ay:aim.y, fx:lastFace.x, fy:lastFace.y, fire, act, ta, idn };
+  return { mx, my, ax:aim.x, ay:aim.y, fx:lastFace.x, fy:lastFace.y, fire, act, ta, idn, dash, dodge };
 }
 // エイムアシスト：照準の近くの敵へ少しだけ寄せる。遠いほど弱い
 function aimAssist(me, aim){
@@ -562,9 +570,17 @@ function localStep(dt){
   const inp = readInput(local);
   if (canRevive()) inter.on = false; else interStep(inp.idn);
   if (boxOpen && (Math.hypot(inp.mx, inp.my) > 0.2 || inp.fire || !alive(me))) closeBox(); // 動く・攻撃するとデスボックスは閉じる
-  if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
+  const nowMs = Date.now();
+  if (inp.dodge && alive(me) && !me.down && !local.dg && nowMs >= (local.dgCd||0)) { // 回避：移動入力の方向、なければ向いている方向
+    const m = Math.hypot(inp.mx, inp.my), dx = m > 0.2 ? inp.mx/m : inp.fx, dy = m > 0.2 ? inp.my/m : inp.fy;
+    local.dg = { t:DODGE_T, ext:0, x:dx, y:dy }; local.dgCd = nowMs + DODGE_CD*1000; ctr.dg++; sfx('dodge'); }
+  if (local.dg && (me.down || me.out)) local.dg = null;
+  if (local.dg) { const g = local.dg, ox = local.x, oy = local.y; local.x += g.x*DODGE_SPD*dt; local.y += g.y*DODGE_SPD*dt; g.t -= dt;
+    if (g.t <= 0) g.ext += dt; const cont = g.t > 0 || (onLow(local) && g.ext < VAULT_EXT); // 低い障害物の上なら越えきるまで続ける
+    pushOut(local, ox, oy, cont); if (!cont) local.dg = null; }
+  else if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire)*(inp.dash && !me.down ? DASH_MUL : 1), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
   local.ax = inp.ax; local.ay = inp.ay; local.fx = inp.fx; local.fy = inp.fy; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
-  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm;
+  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm; local.dgc = ctr.dg; local.dash = !!inp.dash; if (local.dg) local.fire = false;
   return local;
 }
 
@@ -625,12 +641,18 @@ function hostTick(dt){
     if (p.out) continue;
     let inp = p.id===myId ? local : p.bot ? botThink(p, dt) : inputs[p.id];
     if (!inp) continue;
+    // 回避（人間は押した回数で受け取る）：0.25秒無敵・攻撃できない・回復は取り消し。リロードは続く
+    if (inp.dgc !== undefined) { if (p._dgc === undefined) p._dgc = inp.dgc;
+      else if (inp.dgc !== p._dgc) { p._dgc = inp.dgc; if (!p.down && now >= (p.dgCd||0)) { p.dgUntil = now + DODGE_T*1000; p.dgCd = now + DODGE_CD*1000; p.heal = null; } } }
+    const dodging = now < (p.dgUntil||0);
+    if (dodging && inp.fire) inp = Object.assign({}, inp, { fire:false });
+    p.dash = !!inp.dash && !p.down;
     const sp = p.down ? CRAWL : SPEED*moveMul(p, inp.fire && !p.down);
     const ox = p.x, oy = p.y;
     if (p.bot) { p.x += inp.mx*sp*dt; p.y += inp.my*sp*dt; pushOut(p, ox, oy); }
     else if (inp.x!==undefined) {
       const dx=inp.x-p.x, dy=inp.y-p.y, d=Math.hypot(dx,dy), lim=(p.down?CRAWL:SPEED)*0.5+20;
-      if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p, ox, oy); }
+      if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p, ox, oy, now < (p.dgUntil||0) + (VAULT_EXT+.15)*1000); } // 回避中は低い障害物を越えられる
     p.mvAmt = p.bot ? Math.hypot(inp.mx,inp.my) : (inp.mv||0);
     p.ax = inp.ax; p.ay = inp.ay; // ダウン中はこの向きがダウンシールドの向き
     if (inp.fx !== undefined) { p.fx = inp.fx; p.fy = inp.fy; } // 体の向き（人間）
@@ -734,7 +756,7 @@ function weaponStep(p, inp, dt, now){
     return; }
   if (w.magic) { if (p.mp < w.mpCost*amp) { p.noAmmo = now; return; } p.mp -= w.mpCost*amp; }
   else { if (p.wp[mi] <= 0) return; p.rl = 0; p.wp[mi]--; } // 撃つとリロードは取り消し（弾が残っているとき）
-  const sp = w.base*(1-ptv(p,sl,'sgt')) + p.bl + w.moveB*Math.min(1, p.mvAmt||0), ang = aim + (Math.random()-.5)*2*sp; // サイトで基本のぶれが減る
+  const sp = w.base*(1-ptv(p,sl,'sgt')) + p.bl + w.moveB*Math.min(1, p.mvAmt||0) + (p.dash && (p.mvAmt||0) > 0.2 ? DASH_B : 0), ang = aim + (Math.random()-.5)*2*sp; // サイトで基本のぶれが減る
   p.bl = Math.min(w.maxB, p.bl + w.bloom*(1-ptv(p,sl,'muz'))); p.cd = 1/w.rate; p.lastAtk = now; p.lastShot = now; p.wu[wid] = (p.wu[wid]||0)+1; // マズルで反動が減る
   state.bullets.push({ id:bulletId++, o:p.id, tm:teamOf(p.slot), w:wid, k:w.magic?1:0, d:0, max:w.max, life:1,
     x:p.x+Math.cos(ang)*(R+4), y:p.y+Math.sin(ang)*(R+4), vx:Math.cos(ang)*w.spd, vy:Math.sin(ang)*w.spd });
@@ -873,7 +895,7 @@ const unpackLoot = d => ({ v:d.v, items:d.items.map(a=>Object.assign({ id:a[0], 
 const mostUsed = p => { let b=null, n=0; for (const k in (p.wu||{})) if (p.wu[k] > n) { n = p.wu[k]; b = k; } return b===null ? '－' : WEAPONS[WIDS[b]].name; };
 const byId = id => id ? state.players.find(x=>x.id===id) : null;
 function damage(p, dmg, b, now, center){
-  if ((p.inv||0) > now) return; // 蘇生直後の無敵
+  if ((p.inv||0) > now || (p.dgUntil||0) > now) return; // 蘇生直後・回避中の無敵
   pushEv({ k:'hit', x:Math.round(p.x), y:Math.round(p.y), d:dmg, c:center?1:0, o:b.o }); // ダメージ表示（撃った人の画面に出す）
   engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 撃たれた → そのチームのBOTも撃ってよい
   p.lastHitBy = b.o; p.hitAt = now;
@@ -1000,7 +1022,7 @@ function broadcast(){
   const tp = state.tplace || {};
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
     players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
-      hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
+      hp:p.hp, sh:p.sh, down:p.down, dg:(p.dgUntil||0)>now?1:0, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
       wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k,b.id,b.w]),
     ev: state.ev||[], casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
@@ -1076,7 +1098,7 @@ function frame(t){
   const me = state.phase==='lobby' ? null : localStep(dt);
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
-      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, vw:myView().w, vh:myView().h }); }
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, dgc:me.dgc, dash:me.dash, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (state.phase!=='lobby') draw(me);
@@ -1337,7 +1359,9 @@ function drawRoof(r, me){ const inside = me && me.x>r.x && me.x<r.x+r.w && me.y>
   ctx.fillStyle='#3a2a1a'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center'; ctx.fillText(r.label,sx,y+h-ht+15);
   ctx.restore(); return inside; }
 let curArea = null, areaToast = null;
-function drawPlayer(v){
+function drawPlayer(v){ const dg = v.mine ? !!(local && local.dg) : isHost ? (v.p.dgUntil||0) > Date.now() : !!v.p.dg;
+  if (!dg) return drawPlayer0(v); ctx.save(); ctx.globalAlpha = .55; drawPlayer0(v); ctx.restore(); }
+function drawPlayer0(v){
   const { p, x, y, ax, ay, mine, ally } = v;
   ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y, p.down?19:11, p.down?6:4, 0, 0, Math.PI*2); ctx.fill();
   if (p.down) {
@@ -1416,6 +1440,8 @@ function drawFx(){
 }
 // ===== 武器の表示（左下、体力の上） =====
 function drawWeaponHud(mp, bx, by){
+  if (local && alive(mp)) { const left = Math.max(0, ((local.dgCd||0) - Date.now())/1000); ctx.textAlign='left'; ctx.font='bold 12px sans-serif';
+    ctx.fillStyle='#000a'; ctx.fillRect(bx-4, by-82, 92, 18); ctx.fillStyle = left ? '#9aa4c0' : '#8fd'; ctx.fillText(left ? `回避 ${left.toFixed(1)}` : '回避 OK', bx+2, by-68); }
   const w = wOf(mp), cur = mp.wp[4], mag = mp.wp[cur*2+1], ow = wAt(mp, cur^1), other = { name: ow ? ow.name : 'なし' };
   if (!w) { const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left'; ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif';
     ctx.fillText('武器なし', bx+4, y+12); ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(ow ? `もう1つ：${ow.name}（切替）` : 'チェストを開けて武器を拾おう', bx+4, y+36); return; }
@@ -1741,7 +1767,7 @@ function uiPad(edge){
 }
 
 // ===== 設定（スタート長押し・Esc・持ち物ボタン長押し） =====
-const BIND0 = { fire:7, fire2:5, act:2, sw:3, mm:4, heal:12, bag:9, map:8 };
+const BIND0 = { fire:7, fire2:5, act:2, sw:3, mm:4, heal:12, bag:9, map:8, dodge:1, dash:6 };
 const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビュー','メニュー','LS','RS'] },
   ps:{ name:'PlayStation', b:['✕','○','□','△','L1','R1','L2','R2','クリエイト','オプション','L3','R3'] },
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
@@ -1756,7 +1782,7 @@ const SETS = [
   { k:'assist', name:'エイムアシスト', show:()=>cfg.assist?'オン':'オフ', adj:()=>{ cfg.assist ^= 1; } },
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
   { k:'padType', name:'🎮 ボタン表示', show:()=>PADS[cfg.padType].name, adj:d=>{ const ks = Object.keys(PADS); cfg.padType = ks[(ks.indexOf(cfg.padType)+(d<0?ks.length-1:1))%ks.length]; } },
-  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['bag','持ち物（長押しで設定）'],['map','マップ']]
+  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['dodge','回避・乗り越え'],['dash','ダッシュ（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
     .map(([b,name]) => ({ k:'b_'+b, bind:b, name:'🎮 '+name, show:()=>bindWait===b ? '押して…' : bn(cfg.bind[b]), adj:()=>{ bindWait = b; bindReady = false; } })),
   { k:'bReset', name:'🎮 ボタンを初期に戻す', show:()=>'戻す', adj:()=>{ cfg.bind = { ...BIND0 }; } },
 ];
@@ -1775,7 +1801,7 @@ function closeSettings(){ if (!setOpen) return; setOpen = false; bindWait = null
 function renderSettings(){
   $('setp').innerHTML = `<h3><span>設定</span><button class="sec" data-s="x">閉じる</button></h3>` + SETS.map((o,i)=>`<div class="it srow${i===setSel?' on':''}"><span>${o.name}</span>`
     + `<button class="sec" data-s="${i}" data-d="-1">◀</button><b class="sv">${o.show()}</b><button class="sec" data-s="${i}" data-d="1">▶</button></div>`).join('')
-    + `<div class="sub hint">🎮の行は ▶ を押したあと、使いたいボタンを押すと変わります（ほかと重なったら入れ替え）<br>ゲームパッド：十字キー上下で選ぶ・左右で変える／${bn(1)}：閉じる<br>${bn(cfg.bind.bag)}：持ち物（長押しで設定）／${bn(cfg.bind.map)}：マップ<br>キーボード：Tab 持ち物／M マップ／Esc 設定</div>`;
+    + `<div class="sub hint">🎮の行は ▶ を押したあと、使いたいボタンを押すと変わります（ほかと重なったら入れ替え）<br>ゲームパッド：十字キー上下で選ぶ・左右で変える／${bn(1)}：閉じる<br>${bn(cfg.bind.bag)}：持ち物（長押しで設定）／${bn(cfg.bind.map)}：マップ<br>キーボード：Tab 持ち物／M マップ／Esc 設定／Space 回避／Shift ダッシュ</div>`;
   const on = $('setp').querySelector('.srow.on'); if (on) on.scrollIntoView({ block:'nearest' }); }
 
 // ===== 大きなマップ（セレクト・M・ミニマップを押す） =====
@@ -1839,6 +1865,7 @@ const SND = {
   healed:(t,o)=>{ tn(t,.15,.25,660,0,'sine',o); tn(t+.1,.25,.25,990,0,'sine',o); },
   down:(t,o)=>{ tn(t,.6,.5,300,80,'triangle',o); },
   ui:  (t,o)=>{ tn(t,.04,.12,1100,0,'sine',o); },
+  dodge:(t,o)=>{ nz(t,.22,.45,900,.8,'bandpass',o); nz(t+.05,.15,.25,2600,1,'bandpass',o); },
 };
 // 鳴らす。x,yがあれば、画面の中心から遠いほど小さく・左右に振る
 function sfx(k, x, y){ if (!AC || AC.state!=='running' || !cfg.vol || !SND[k]) return;
