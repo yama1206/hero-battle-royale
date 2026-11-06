@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.4<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.5<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -113,7 +113,10 @@ const MP_MAX = 100, MP_REGEN = 4,  /* りょうさんの指示：回復を遅く
 const wAt = (p, s) => p && p.wp && p.wp[s*2] >= 0 ? WEAPONS[WIDS[p.wp[s*2]]] : null; // 枠s（0か1）の武器。なければnull
 const wOf = p => p && p.wp ? wAt(p, p.wp[4]) : null; // いま持っている武器
 // 撃っているときの移動速度の倍率（魔法の詠唱中はさらに遅い）
-const moveMul = (p, firing) => { if (p && (p.heal || p.hl)) return HEAL_MOVE; const w = wOf(p); if (!w) return 1; if (p.cast || p.cs || p.aimA || p.ac) return w.area.move; return firing ? w.fireMove : 1; };
+// りょうさんの指示（2026-11-06）：持っている武器の種類で移動の速さが変わる。近接＞SMG＞AR＞SR＞魔法（HGは近接とSMGの間に仮置き。数値は仮）
+const CAT_MOVE = { '近接':1.0, 'HG':0.97, 'SMG':0.94, 'AR':0.89, 'SR':0.84, '魔法':0.8 };
+const moveMul = (p, firing) => { if (p && (p.heal || p.hl)) return HEAL_MOVE; const w = wOf(p); if (!w) return 1; const c = CAT_MOVE[w.cat] || 1;
+  if (p.cast || p.cs || p.aimA || p.ac) return c*w.area.move; return c*(firing ? w.fireMove : 1); };
 // ===== 物資（仕様2・3・4）。数値は仕様どおり。仕様にない数値は「仮」と書いてあります =====
 // stack＝1枠に入る数（回復アイテムは最大所持数と同じ）。time＝使用時間（秒）
 const ITEMS = {
