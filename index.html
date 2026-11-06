@@ -39,7 +39,7 @@
 </head>
 <body>
 <div id="safe"></div><div id="lobby"><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階4：安全地帯と決着</div>
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階5：武器7種</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -58,7 +58,7 @@
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
   </div>
   <div id="msg"></div>
-  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで射撃・Xボタン長押しで蘇生／PC WASD移動・マウス照準・クリック射撃・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋射撃・右下ボタン長押しで蘇生</div>
+  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・RTで攻撃・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・LBで魔法の範囲攻撃モード／PC WASD移動・マウス照準・クリック攻撃・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>※物資箱ができるまでは、開始時にランダムな武器を2つ持っています</div>
 </div></div>
 
 <div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div>
@@ -72,7 +72,27 @@ let MAP = 16000;   // マップの広さ（マップを読み込むと変わる�
 const MATCH_SEC = 600, PREFIX = 'hbr-room-';
 const R = 13, SPEED = 220;
 // ---- ここから下の数値は試作用の仮（未決定・あとで差し替え） ----
-const GUN = { rate:0.15, speed:660, dmg:12, range:510 }; // 射程・弾速は仕様のARを約0.6倍（画面の広さに合わせた仮）
+// ===== 武器データ（仕様2）。増やすときはここに足すだけ =====
+// dmg・mag（装弾数）・rate（発/秒）・reload（秒）は仕様どおり。射程（eff有効・max最大）・弾速spdは仕様の約0.6倍
+// falloff＝最大射程でのダメージ割合。base＝基本のぶれ、bloom＝1発ごとに増えるぶれ、maxB＝ぶれの上限、rec＝ぶれの戻る速さ（ラジアン/秒）
+// moveB＝走りながら撃つときに増えるぶれ、fireMove＝撃っている間の移動速度の倍率。ぶれ・移動の数値は仮
+const WEAPONS = {
+  hg:    { name:'標準ハンドガン', cat:'HG',  ammo:'s', dmg:20, mag:10, rate:4,   reload:1.5, auto:false, eff:252, max:360, spd:540, falloff:.5, base:.02,  bloom:.03, maxB:.15, rec:.6,  moveB:.05, fireMove:.9 },
+  rev:   { name:'リボルバー',     cat:'HG',  ammo:'l', dmg:50, mag:6,  rate:1.2, reload:2.5, auto:false, eff:252, max:360, spd:540, falloff:.5, base:.015, bloom:.12, maxB:.3,  rec:.5,  moveB:.06, fireMove:.85 },
+  smg:   { name:'軽量型SMG',      cat:'SMG', ammo:'s', dmg:12, mag:20, rate:12,  reload:1.8, auto:true,  eff:180, max:270, spd:510, falloff:.4, base:.04,  bloom:.02, maxB:.28, rec:.8,  moveB:.04, fireMove:.9 },
+  ar:    { name:'標準AR',         cat:'AR',  ammo:'l', dmg:18, mag:20, rate:8,   reload:2.0, auto:true,  eff:390, max:510, spd:660, falloff:.6, base:.02,  bloom:.012,maxB:.14, rec:.6,  moveB:.05, fireMove:.8 },
+  sr:    { name:'標準SR',         cat:'SR',  ammo:'l', dmg:80, mag:4,  rate:1,   reload:2.5, auto:false, eff:660, max:900, spd:900, falloff:.7, base:.005, bloom:.2,  maxB:.25, rec:.35, moveB:.1,  fireMove:.6, center:true },
+  sword: { name:'剣',             cat:'近接', melee:true, dmg:35, rate:1.5, reach:39, arc:Math.PI/2, swings:10, fireMove:.9 }, // reach＝仕様65×0.6。砥石1個で10回
+  staff: { name:'魔法の杖',       cat:'魔法', magic:true, dmg:18, rate:3, mpCost:10, eff:360, max:480, spd:390, falloff:1, base:.01, bloom:0, maxB:0, rec:1, moveB:0, fireMove:.75,
+           area:{ dist:300, r:80, delay:1.0, dmg:35, mp:30, cd:1.2, move:.5 } }, // 範囲攻撃（数値は仮）：前方300の地点に半径80、1秒後に爆発
+};
+const WIDS = Object.keys(WEAPONS);
+const AMMO_NAME = { s:'小口径弾', l:'大口径弾' };
+const START_AMMO = 80, START_STONE = 3; // 仮：物資箱ができるまでの初期所持（弾は40発×2枠ぶん）
+const MP_MAX = 100, MP_REGEN = 10, SWITCH_SEC = 0.3; // 武器の持ち替え時間は仮
+const wOf = p => p && p.wp ? WEAPONS[WIDS[p.wp[p.wp[4]*2]]] : null; // いま持っている武器
+// 撃っているときの移動速度の倍率（魔法の詠唱中はさらに遅い）
+const moveMul = (p, firing) => { const w = wOf(p); if (!w) return 1; if (p.cast || p.cs) return w.area.move; return firing ? w.fireMove : 1; };
 const CRAWL = 60;                    // ダウン中の這う速度
 const DOWN_HP = 100;                 // ダウン中の体力
 const DOWN_SHIELD = 200;             // ダウンシールド耐久（仕様：ノーマル200。レアリティで変わるのは後で）
@@ -398,11 +418,22 @@ const keys = {}; let mouse = { x:0, y:0, down:false, used:false };
 const touch = { move:null, aim:null, act:null };
 const SAFE = { t:0, r:0, b:0, l:0 }; // ノッチなどで隠れる端の幅
 const actBtn = () => ({ x:innerWidth-80-SAFE.r, y:innerHeight-(innerWidth>innerHeight?120:170)-SAFE.b, r:38 }); // 横画面では少し下に
-addEventListener('keydown', e => keys[e.code]=true); addEventListener('keyup', e => keys[e.code]=false);
+// スマホのボタン（蘇生の近くに並べる）：武器切替・リロード・魔法の範囲攻撃モード
+function touchBtns(){ const b = actBtn(), me = state.players.find(p=>p.id===myId), w = wOf(me);
+  return [ { k:'sw', x:b.x-88, y:b.y+44, r:28, label:'切替' },
+           { k:'rl', x:b.x, y:b.y-82, r:28, label:'リロード', show:!!(w && w.ammo) },
+           { k:'mm', x:b.x-88, y:b.y-40, r:28, label:me&&me.mm?'通常':'範囲', show:!!(w && w.magic) } ].filter(x=>x.show!==false); }
+const ctr = { sw:0, rl:0, mm:0 }; // 押した回数（ホストは増えた分だけ処理する）
+addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
+  if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++; });
+addEventListener('keyup', e => keys[e.code]=false);
+let wheelAt = 0; addEventListener('wheel', e => { const n=performance.now(); if (n-wheelAt>250 && Math.abs(e.deltaY)>4) { wheelAt=n; ctr.sw++; } }, { passive:true });
 addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
 function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
     if (canRevive() && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
+    const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
+    if (tb) { ctr[tb.k]++; tb.at = performance.now(); touch.flash = { k:tb.k, at:performance.now() }; continue; }
     const side = t.clientX < innerWidth/2 ? 'move':'aim';
     if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
 function tMove(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
@@ -410,33 +441,39 @@ function tEnd(e){ for (const t of e.changedTouches) for (const k of ['move','aim
 const stickOf = t => { if(!t) return {x:0,y:0}; let x=(t.x-t.ox)/60, y=(t.y-t.oy)/60; const m=Math.hypot(x,y); if(m>1){x/=m;y/=m;} return {x,y}; };
 const dz = v => Math.abs(v) < 0.2 ? 0 : v;
 
-let lastAim = { x:1, y:0 };
+let lastAim = { x:1, y:0 }, gpPrev = [];
 function readInput(me){
-  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, act=!!keys.KeyE || !!touch.act;
+  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act;
   if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
   if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; }
   const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g);
   if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]), rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
+    const pr = i => !!(gp.buttons[i]&&gp.buttons[i].pressed), edge = i => pr(i) && !gpPrev[i];
     if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; }
-    if ((gp.buttons[7]&&gp.buttons[7].value>0.3) || (gp.buttons[5]&&gp.buttons[5].pressed)) { fire=true; assist=true; }
-    if (gp.buttons[2]&&gp.buttons[2].pressed) act=true; }
+    if ((gp.buttons[7]&&gp.buttons[7].value>0.3) || pr(5)) { fire=true; assist=true; }
+    // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
+    if (pr(2) && canRevive()) act=true; else if (edge(2)) ctr.rl++;
+    if (edge(3)) ctr.sw++; if (edge(4)) ctr.mm++;
+    gpPrev = gp.buttons.map(b=>b.pressed); }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; }
-  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; } }
+  if (touch.aim) { const s=stickOf(touch.aim); if (Math.hypot(s.x,s.y)>0.2){ ax=s.x; ay=s.y; fire = true; assist=true; ta=true; } } // スマホは単発武器も押しっぱなしで連射
   const m = Math.hypot(mx,my); if (m>1){ mx/=m; my/=m; }
   if (ax||ay) { const a=Math.hypot(ax,ay); lastAim={x:ax/a,y:ay/a}; }
   else if (!mouse.used && Math.hypot(mx,my)>0.2) { const a=Math.hypot(mx,my); lastAim={x:mx/a,y:my/a}; } // 照準していないときは移動方向を向く
   let aim = lastAim;
   if (assist && me) aim = aimAssist(me, aim);
-  return { mx, my, ax:aim.x, ay:aim.y, fire, act };
+  return { mx, my, ax:aim.x, ay:aim.y, fire, act, ta };
 }
+// エイムアシスト：照準の近くの敵へ少しだけ寄せる。遠いほど弱い
 function aimAssist(me, aim){
   const mp = state.players.find(p=>p.id===myId); if (!mp) return aim;
-  let best=null, bd=1e9;
+  const w = wOf(mp), range = w ? (w.melee ? 120 : w.max) : 300;
+  let best=null, bd=1e9, bdist=0;
   for (const p of state.players) { if (p.out || teamOf(p.slot)===teamOf(mp.slot)) continue;
-    const dx=p.x-me.x, dy=p.y-me.y, d=Math.hypot(dx,dy); if (d>GUN.range||d<1) continue;
-    const ang = Math.acos(Math.max(-1,Math.min(1,(dx*aim.x+dy*aim.y)/d))); if (ang < 0.44 && d<bd){ bd=d; best={x:dx/d,y:dy/d}; } }
-  if (!best) return aim; const x=aim.x+best.x, y=aim.y+best.y, m=Math.hypot(x,y)||1; return {x:x/m,y:y/m};
+    const px = isHost?p.x:p.dx, py = isHost?p.y:p.dy, dx=px-me.x, dy=py-me.y, d=Math.hypot(dx,dy); if (d>range||d<1) continue;
+    const ang = Math.acos(Math.max(-1,Math.min(1,(dx*aim.x+dy*aim.y)/d))); if (ang < 0.4 && ang<bd){ bd=ang; bdist=d; best={x:dx/d,y:dy/d}; } }
+  if (!best) return aim; const k = 0.8*(1-bdist/range*0.6), x=aim.x+best.x*k, y=aim.y+best.y*k, m=Math.hypot(x,y)||1; return {x:x/m,y:y/m};
 }
 
 // ===== 自分の移動 =====
@@ -445,8 +482,9 @@ function localStep(dt){
   const me = state.players.find(p=>p.id===myId); if (!me) return null;
   if (!local || local.rs !== me.rs) local = { x:me.x, y:me.y, rs:me.rs };
   const inp = readInput(local);
-  if (!me.out) { const sp = me.down ? CRAWL : SPEED, ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
+  if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
   local.ax = inp.ax; local.ay = inp.ay; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
+  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm;
   return local;
 }
 
@@ -487,9 +525,9 @@ function hostStartMatch(){
   for (let t=0;t<nTeams;t++){ const a=a0+t/nTeams*Math.PI*2; const rr = 1400 + nTeams*60; base.push(freeSpot(8000+Math.cos(a)*rr, 7550+Math.sin(a)*rr, 300)); } // 仮：旧市街のまわりに出現（チームが多いほど広く）
   state.players.forEach(p => { const b=base[teamOf(p.slot)]||base[0], s=freeSpot(b.x, b.y, SPAWN_ALLY_R);
     Object.assign(p, { skin:p.skin||'default', x:s.x, y:s.y, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, rv:0, dhp:0, dsh:0, wp:null,
-      kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0 }); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
+      kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0 }); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
   for (const k in engaged) delete engaged[k];
-  state.zone = makeZones(); state.tplace = {};
+  state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ev = [];
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
   broadcast(); enterGame();
 }
@@ -506,34 +544,44 @@ function hostTick(dt){
     if (p.out) continue;
     let inp = p.id===myId ? local : p.bot ? botThink(p, dt) : inputs[p.id];
     if (!inp) continue;
-    const sp = p.down ? CRAWL : SPEED;
+    const sp = p.down ? CRAWL : SPEED*moveMul(p, inp.fire && !p.down);
     const ox = p.x, oy = p.y;
     if (p.bot) { p.x += inp.mx*sp*dt; p.y += inp.my*sp*dt; pushOut(p, ox, oy); }
     else if (inp.x!==undefined) {
-      const dx=inp.x-p.x, dy=inp.y-p.y, d=Math.hypot(dx,dy), lim=sp*0.5+20;
+      const dx=inp.x-p.x, dy=inp.y-p.y, d=Math.hypot(dx,dy), lim=(p.down?CRAWL:SPEED)*0.5+20;
       if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p, ox, oy); }
+    p.mvAmt = p.bot ? Math.hypot(inp.mx,inp.my) : (inp.mv||0);
     p.ax = inp.ax; p.ay = inp.ay; // ダウン中はこの向きがダウンシールドの向き
     p.cd -= dt; p.reviving = false;
     // 安全地帯の外：1秒ごとにダメージ（入ればすぐ止まる）
     if (outOfZone(zn, p.x, p.y)) { p.zAcc = (p.zAcc||0) + dt; while (p.zAcc >= 1 && !p.out) { p.zAcc -= 1; zoneHit(p, zn.dmg, now); } if (p.out) continue; }
     else p.zAcc = 0;
-    if (p.down) { if (now >= p.bleedAt) eliminate(p, '時間切れ'); continue; }
+    if (p.down) { p.rl = 0; if (now >= p.bleedAt) eliminate(p, '時間切れ'); continue; }
     // 蘇生（長押し）：近くのダウンした味方
     if (inp.act) { const tgt = state.players.find(q=>q.down && !q.out && teamOf(q.slot)===teamOf(p.slot) && Math.hypot(q.x-p.x,q.y-p.y)<REVIVE_RANGE);
       if (tgt) { p.reviving = true; tgt.rvTick = now; tgt.rv += dt/REVIVE_SEC;
         if (tgt.rv >= 1) { Object.assign(tgt, { down:false, hp:REVIVE_HP, sh:0, rv:0, inv:now+REVIVE_INV }); p.rvc = (p.rvc||0)+1; feed(`${p.name} が ${tgt.name} を蘇生`, teamOf(p.slot)); }
         continue; } }
-    if (inp.fire && p.cd <= 0 && !((p.inv||0) > now)) { p.cd = GUN.rate;
-      if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 人間が攻撃を始めた → 同じチームのBOTも撃ってよい
-      state.bullets.push({ id:bulletId++, o:p.id, tm:teamOf(p.slot), x:p.x+p.ax*(R+4), y:p.y+p.ay*(R+4), vx:p.ax*GUN.speed, vy:p.ay*GUN.speed, life:GUN.range/GUN.speed }); }
+    weaponStep(p, inp, dt, now);
   }
   for (const p of state.players) if (p.down && p.rv>0 && now-(p.rvTick||0) > 150) p.rv = 0; // 長押しをやめたら最初から
+  // 弾：最大射程で消える。有効射程を超えるとダメージが下がる
   for (const b of state.bullets) {
-    b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt;
-    if (inObs(b.x,b.y) || b.x<0||b.y<0||b.x>MAP||b.y>MAP) { b.life=0; continue; }
+    const st = Math.hypot(b.vx,b.vy)*dt; b.x += b.vx*dt; b.y += b.vy*dt; b.d += st;
+    if (b.d >= b.max || inObs(b.x,b.y) || b.x<0||b.y<0||b.x>MAP||b.y>MAP) { b.life=0; continue; }
     for (const p of state.players) { if (p.out || teamOf(p.slot)===b.tm) continue; // 味方の弾はすり抜ける
-      if (Math.hypot(p.x-b.x, p.y-b.y) < R) { b.life=0; damage(p, GUN.dmg, b, now); break; } }
+      const hd = Math.hypot(p.x-b.x, p.y-b.y);
+      if (hd < R) { b.life=0; const w = WEAPONS[WIDS[b.w]];
+        const f = b.d <= w.eff ? 1 : 1 - (1-w.falloff)*Math.min(1,(b.d-w.eff)/(w.max-w.eff));
+        damage(p, Math.max(1, Math.round(w.dmg*f)), b, now, w.center && hd < R*0.4); break; } }
   }
+  // 魔法の範囲攻撃：時間が来たら爆発
+  for (const c of state.casts) if (now >= c.at) { c.done = true; const w = WEAPONS.staff.area, o = byId(c.o);
+    pushEv({ k:'boom', x:c.x, y:c.y, r:c.r });
+    for (const q of state.players) if (!q.out && teamOf(q.slot)!==c.tm && Math.hypot(q.x-c.x,q.y-c.y) < c.r+R) damage(q, w.dmg, { o:c.o, vx:q.x-c.x||1, vy:q.y-c.y }, now);
+    if (o && o.cast===c) o.cast = null; }
+  state.casts = state.casts.filter(c=>!c.done);
+  state.ev = state.ev.filter(e=>now-e.at < 700);
   state.bullets = state.bullets.filter(b=>b.life>0);
   // 順位：チームが全滅した時点で「残りチーム数＋1」位。最後まで残ったチームが1位
   const live = new Set(state.players.filter(p=>!p.out).map(p=>teamOf(p.slot)));
@@ -546,9 +594,65 @@ function hostTick(dt){
     state.winner = w.length ? w.map(p=>p.name).join('・') : 'なし'; state.phase='end';
   }
 }
+// ===== 武器の処理（ホスト） =====
+let evId = 0;
+function pushEv(e){ e.id = ++evId; e.at = Date.now(); state.ev.push(e); }
+function giveLoadout(p){ // 仮：物資箱ができるまで、開始時に別々の武器を2つ持たせる
+  const ids = [...WIDS.keys()].sort(()=>Math.random()-.5), w0 = WEAPONS[WIDS[ids[0]]], w1 = WEAPONS[WIDS[ids[1]]];
+  Object.assign(p, { wp:[ids[0], w0.mag||0, ids[1], w1.mag||0, 0], am:[START_AMMO, START_AMMO], st:START_STONE, swg:0, mp:MP_MAX, bl:0, rl:0, rlT:1, swt:0, mm:0,
+    wu:{}, cast:null, trig:false, lastAtk:0, lastShot:0, noAmmo:0, _sw:undefined, _rl:undefined, _mm:undefined });
+}
+function weaponStep(p, inp, dt, now){
+  // ボタンを押した回数が増えたか（BOTは doSw などで直接）
+  const pressed = k => { if (inp['do'+k]) return true; const v = inp[k.toLowerCase()]; if (v===undefined) return false;
+    const key = '_'+k.toLowerCase(); if (p[key]===undefined) { p[key] = v; return false; } const r = v !== p[key]; p[key] = v; return r; };
+  if (now - p.lastAtk > 300) p.mp = Math.min(MP_MAX, p.mp + MP_REGEN*dt); // 攻撃中はMPが回復しない
+  let w = wOf(p);
+  if (now - p.lastShot > 100) p.bl = Math.max(0, p.bl - (w.rec||1)*dt); // 撃つのをやめると、ぶれが戻る
+  if (p.swt > 0) p.swt -= dt;
+  if (pressed('Sw')) { p.rl = 0; p.wp[4] ^= 1; p.swt = SWITCH_SEC; p.bl = 0; w = wOf(p); } // 持ち替えるとリロードは取り消し
+  if (pressed('Mm') && w.magic) p.mm ^= 1;
+  const mi = p.wp[4]*2+1;
+  if (w.ammo) { const ai = w.ammo==='s' ? 0 : 1;
+    if (p.rl > 0) { p.rl -= dt; if (p.rl <= 0) { const tot = p.am[ai] + p.wp[mi]; p.wp[mi] = Math.min(w.mag, tot); p.am[ai] = tot - p.wp[mi]; p.rl = 0; } } // 完了時に一括装填
+    const want = pressed('Rl') || (p.wp[mi] === 0 && !inp.fire);
+    if (want && !p.rl && p.wp[mi] < w.mag) { if (p.am[ai] > 0) { p.rl = p.rlT = w.reload; } else p.noAmmo = now; } // 弾切れは自動リロード
+    if (p.wp[mi] === 0 && inp.fire && !p.rl) { if (p.am[ai] > 0) p.rl = p.rlT = w.reload; else p.noAmmo = now; }
+  } else pressed('Rl');
+  if (!inp.fire) { p.trig = false; return; }
+  const ready = p.cd <= 0 && p.swt <= 0 && !((p.inv||0) > now) && (w.auto || w.melee || w.magic || inp.ta || p.bot || !p.trig);
+  p.trig = true;
+  if (!ready) return;
+  if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 人間が攻撃を始めた → 同じチームのBOTも撃ってよい
+  const wid = p.wp[p.wp[4]*2], aim = Math.atan2(p.ay, p.ax);
+  if (w.melee) { // 近接：正面の扇形。砥石が必要
+    if (p.st <= 0) { p.noAmmo = now; return; }
+    p.cd = 1/w.rate; p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1;
+    pushEv({ k:'slash', x:p.x, y:p.y, a:+aim.toFixed(2), r:w.reach });
+    for (const q of state.players) { if (q.out || teamOf(q.slot)===teamOf(p.slot)) continue;
+      const dx=q.x-p.x, dy=q.y-p.y, d=Math.hypot(dx,dy); if (d > w.reach+R) continue;
+      let da = Math.abs(Math.atan2(dy,dx) - aim); if (da > Math.PI) da = Math.PI*2-da;
+      if (d < R || da < w.arc/2) damage(q, w.dmg, { o:p.id, vx:dx||1, vy:dy }, now); }
+    if (++p.swg >= w.swings) { p.swg = 0; p.st--; } // 10回で砥石1個
+    return; }
+  if (w.magic && p.mm) { // 魔法の範囲攻撃：前方の地点に円を出し、少しあとで爆発。詠唱中は遅くなる
+    const a = w.area; if (p.cast) return; if (p.mp < a.mp) { p.noAmmo = now; return; }
+    p.mp -= a.mp; p.cd = a.cd; p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1;
+    let tx = p.x+p.ax*a.dist, ty = p.y+p.ay*a.dist; tx = Math.max(0,Math.min(MAP,tx)); ty = Math.max(0,Math.min(MAP,ty));
+    p.cast = { x:Math.round(tx), y:Math.round(ty), r:a.r, at:now+a.delay*1000, o:p.id, tm:teamOf(p.slot) }; state.casts.push(p.cast);
+    return; }
+  if (w.magic) { if (p.mp < w.mpCost) { p.noAmmo = now; return; } p.mp -= w.mpCost; }
+  else { if (p.wp[mi] <= 0) return; p.rl = 0; p.wp[mi]--; } // 撃つとリロードは取り消し（弾が残っているとき）
+  const sp = w.base + p.bl + w.moveB*Math.min(1, p.mvAmt||0), ang = aim + (Math.random()-.5)*2*sp;
+  p.bl = Math.min(w.maxB, p.bl + w.bloom); p.cd = 1/w.rate; p.lastAtk = now; p.lastShot = now; p.wu[wid] = (p.wu[wid]||0)+1;
+  state.bullets.push({ id:bulletId++, o:p.id, tm:teamOf(p.slot), w:wid, k:w.magic?1:0, d:0, max:w.max, life:1,
+    x:p.x+Math.cos(ang)*(R+4), y:p.y+Math.sin(ang)*(R+4), vx:Math.cos(ang)*w.spd, vy:Math.sin(ang)*w.spd });
+}
+const mostUsed = p => { let b=null, n=0; for (const k in (p.wu||{})) if (p.wu[k] > n) { n = p.wu[k]; b = k; } return b===null ? '－' : WEAPONS[WIDS[b]].name; };
 const byId = id => id ? state.players.find(x=>x.id===id) : null;
-function damage(p, dmg, b, now){
+function damage(p, dmg, b, now, center){
   if ((p.inv||0) > now) return; // 蘇生直後の無敵
+  pushEv({ k:'hit', x:Math.round(p.x), y:Math.round(p.y), d:dmg, c:center?1:0, o:b.o }); // ダメージ表示（撃った人の画面に出す）
   engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 撃たれた → そのチームのBOTも撃ってよい
   p.lastHitBy = b.o; p.hitAt = now;
   const k = byId(b.o);
@@ -589,6 +693,12 @@ const myView = () => ({ w:Math.round(innerWidth/ZOOM/2), h:Math.round(innerHeigh
 // BOTは、相手（人間）の画面に自分が映っているときだけ撃つ
 function seenBy(q, p){ if (q.bot) return true; const v = q.id===myId ? myView() : (inputs[q.id]&&inputs[q.id].vw ? {w:inputs[q.id].vw,h:inputs[q.id].vh} : {w:300,h:300});
   return Math.abs(p.x-q.x) < v.w-20 && Math.abs(p.y-q.y) < v.h-20; }
+// BOTの武器選び：その距離でどれだけ使えるか（大きいほど良い）
+function botScore(p, slot, d){ const w = WEAPONS[WIDS[p.wp[slot*2]]];
+  if (w.melee) return p.st > 0 ? (d < 70 ? 3 : 0) : -1;
+  if (w.ammo && p.wp[slot*2+1] + p.am[w.ammo==='s'?0:1] <= 0) return -1;
+  if (d > w.max) return 0; return d <= w.eff ? 2 + w.dmg*w.rate/200 : 1; }
+const botReach = p => { let r = 0; for (const s of [0,1]) { const w = WEAPONS[WIDS[p.wp[s*2]]]; r = Math.max(r, w.melee ? 220 : w.max*0.9); } return r; }; // 剣だけなら近くの敵へ寄っていく
 function botThink(p, dt){
   const now = Date.now(), myTeam = teamOf(p.slot);
   const mates = state.players.filter(q=>q!==p && teamOf(q.slot)===myTeam && !q.out);
@@ -596,7 +706,7 @@ function botThink(p, dt){
   const humanTeam = state.players.some(q=>teamOf(q.slot)===myTeam && !q.bot);
   p.th = (p.th||0) - dt;
   if (p.th <= 0) { p.th = 0.3; // 判断は一定間隔で更新
-    let tgt=null, bd=GUN.range*0.9;
+    let tgt=null, bd=botReach(p);
     for (const q of state.players) { if (q.out || teamOf(q.slot)===myTeam) continue;
       const d=Math.hypot(q.x-p.x,q.y-p.y); if (d<bd && seenBy(q,p) && losClear(p,q)){ bd=d; tgt=q; } }
     if (p.lastHitBy && now-p.hitAt<2000) { const q=state.players.find(x=>x.id===p.lastHitBy); if (q&&!q.out&&seenBy(q,p)) tgt=q; }
@@ -626,10 +736,16 @@ function botThink(p, dt){
   if (m < (!run && rev ? REVIVE_RANGE*0.6 : 20)) { mx=0; my=0; if (run) p.zwp = null; } else { mx/=m; my/=m; }
   let ax=p.ax, ay=p.ay, fire=false, act=false;
   if (rev && rd < REVIVE_RANGE && !run) act = true;
-  else if (tgt && seenBy(tgt,p)) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; mx*=0.5; my*=0.5; }
+  let doSw = false, doRl = false;
+  if (!act && tgt && seenBy(tgt,p)) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y), w = wOf(p);
+    // 距離に合った武器へ持ち替える（近い敵には剣、遠い敵には射程の長い武器）
+    if (now > (p.botSwAt||0) && botScore(p, p.wp[4]^1, d) > botScore(p, p.wp[4], d) + 0.5) { doSw = true; p.botSwAt = now + 1500; }
+    if (w.melee && d > w.reach + R*0.5 && !run) { mx = (tgt.x-p.x)/d; my = (tgt.y-p.y)/d; } // 剣なら近づく
+    if (!w.melee || d < w.reach + R + 10) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; if (!w.melee) { mx*=0.5; my*=0.5; } } }
+  else if (!tgt && p.wp) { const w = wOf(p); if (w.ammo && p.wp[p.wp[4]*2+1] < w.mag/2 && !p.rl) doRl = true; } // 戦っていないときに弾を込めておく
   if (!fire && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
   if (p.down) { fire=false; act=false; }
-  return { mx, my, ax, ay, fire, act };
+  return { mx, my, ax, ay, fire, act, doSw, doRl };
 }
 let feeds = [];
 // tm を付けた通知は、そのチームの人にだけ表示する（敵の蘇生は見せない）
@@ -643,8 +759,10 @@ function broadcast(){
   const tp = state.tplace || {};
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
     players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2),
-      hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh, rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
-    bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy)]) };
+      hp:p.hp, sh:p.sh, down:p.down, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
+      wp:p.wp, am:p.am, st:p.st, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
+    bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k]),
+    ev: state.ev||[], casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
   const pkt = { t:'state', s, now };
   for (const id in conns) if (conns[id].open) conns[id].send(pkt);
 }
@@ -663,7 +781,8 @@ function startJoin(){
       if (d.t==='state') {
         clockOffset = d.now - Date.now(); const before = state.phase;
         const prev = {}; for (const p of state.players) prev[p.id] = p;
-        state = d.s; state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3]}));
+        state = d.s; state.bullets = d.s.bullets.map(a=>({x:a[0],y:a[1],vx:a[2],vy:a[3],k:a[4]}));
+        state.casts = d.s.casts.map(a=>({x:a[0],y:a[1],r:a[2],at:Date.now()+a[3]})); takeEvents(state.ev);
         if (state.map && W.id !== state.map) buildWorld(state.map);
         for (const p of state.players) { const o=prev[p.id]; const keep = o && o.dx!==undefined && o.rs===p.rs; p.dx=keep?o.dx:p.x; p.dy=keep?o.dy:p.y; }
         if (before==='lobby' && state.phase==='match') { local=null; enterGame(); }
@@ -705,16 +824,16 @@ cv.addEventListener('touchstart',tStart,{passive:false}); cv.addEventListener('t
 cv.addEventListener('touchend',tEnd,{passive:false}); cv.addEventListener('touchcancel',tEnd,{passive:false});
 cv.addEventListener('contextmenu', e=>e.preventDefault());
 let looping = false;
-function enterGame(){ $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
+function enterGame(){ lastEv=0; fxs.length=0; $('lobby').style.display='none'; $('result').style.display='none'; $('game').style.display='block'; resize(); local=null; curArea=null;
   if (!looping) { looping=true; lastT=performance.now(); requestAnimationFrame(frame); } }
 
 let netAcc = 0;
 function frame(t){
   const dt = Math.min(0.05, (t-lastT)/1000); lastT = t;
   const me = state.phase==='lobby' ? null : localStep(dt);
-  if (isHost) { hostTick(dt); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
+  if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
-      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fire:me.fire, act:me.act, vw:myView().w, vh:myView().h }); }
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (state.phase!=='lobby') draw(me);
@@ -1029,6 +1148,44 @@ function drawLabel(v){
   ctx.fillStyle='#6cf'; ctx.fillRect(x-22,top-5,44*p.sh/100,3); ctx.fillStyle='#e55'; ctx.fillRect(x-22,top-2,44*p.hp/100,4);
 }
 
+// ===== 攻撃の演出（斬撃・爆発・範囲の予告・ダメージ数値） =====
+const fxs = []; let lastEv = 0;
+function takeEvents(ev){ for (const e of ev||[]) { if (e.id <= lastEv) continue; lastEv = e.id;
+    if (e.k==='hit' && e.o!==myId) continue; // ダメージ数値は撃った人にだけ
+    fxs.push(Object.assign({}, e, { t0:performance.now(), jx:(Math.random()-.5)*24 })); } }
+function drawFx(){
+  const n = performance.now();
+  for (const c of state.casts||[]) { const left = Math.max(0, c.at-Date.now())/ (WEAPONS.staff.area.delay*1000);
+    ctx.fillStyle='rgba(190,120,255,.18)'; ctx.strokeStyle='rgba(210,150,255,.9)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r*(1-left),0,Math.PI*2); ctx.stroke(); }
+  for (let i=fxs.length-1; i>=0; i--) { const f = fxs[i], age = (n-f.t0)/1000;
+    if (age > 0.9) { fxs.splice(i,1); continue; }
+    if (f.k==='slash' && age < 0.18) { ctx.save(); ctx.globalAlpha = 1-age/0.18; ctx.fillStyle='rgba(255,255,255,.55)';
+      ctx.beginPath(); ctx.moveTo(f.x, f.y-BODY_H); ctx.arc(f.x, f.y-BODY_H, f.r+R, f.a-Math.PI/4, f.a+Math.PI/4); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    else if (f.k==='boom' && age < 0.35) { ctx.save(); ctx.globalAlpha = 1-age/0.35; ctx.fillStyle='rgba(200,130,255,.5)';
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r*(0.6+age), 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+    else if (f.k==='hit') { ctx.save(); ctx.globalAlpha = Math.min(1, (0.9-age)*3); ctx.textAlign='center'; ctx.font='bold 16px sans-serif';
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.7)'; const x = f.x+f.jx, y = f.y-SPRITE_H*CHAR_SCALE-14-age*36;
+      ctx.strokeText(f.d, x, y); ctx.fillStyle = f.c ? '#ffd23a' : '#fff'; ctx.fillText(f.d, x, y); ctx.restore(); } }
+}
+// ===== 武器の表示（左下、体力の上） =====
+function drawWeaponHud(mp, bx, by){
+  const w = wOf(mp); if (!w) return; const cur = mp.wp[4], mag = mp.wp[cur*2+1], other = WEAPONS[WIDS[mp.wp[(cur^1)*2]]];
+  const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left';
+  ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.fillText(w.name, bx+4, y+12);
+  let info = '';
+  if (w.ammo) info = `${mag} / ${w.mag}　${AMMO_NAME[w.ammo]} ${mp.am[w.ammo==='s'?0:1]}`;
+  else if (w.melee) info = `砥石 ${mp.st}`;
+  else info = mp.mm ? '範囲攻撃モード' : '通常攻撃';
+  ctx.font='bold 13px sans-serif'; ctx.textAlign='right'; ctx.fillStyle = w.ammo && mag===0 ? '#ff8a8a' : '#ffe28a'; ctx.fillText(info, bx+218, y+12);
+  ctx.textAlign='left'; ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(`もう1つ：${other.name}`, bx+4, y+36);
+  if (w.magic) { ctx.fillStyle='#2a2440'; ctx.fillRect(bx+4, y+18, 214, 6); ctx.fillStyle='#b98aff'; ctx.fillRect(bx+4, y+18, 214*mp.mp/MP_MAX, 6); }
+  if (mp.rl > 0) { ctx.fillStyle='#333'; ctx.fillRect(bx+4, y+18, 214, 6); ctx.fillStyle='#8fd'; ctx.fillRect(bx+4, y+18, 214*mp.rl, 6);
+    ctx.textAlign='right'; ctx.fillStyle='#8fd'; ctx.fillText('リロード中', bx+218, y+36); }
+  if (mp.na) { ctx.textAlign='center'; ctx.font='bold 18px sans-serif'; ctx.fillStyle='#ff8a8a';
+    ctx.fillText(w.melee ? '砥石がありません' : w.magic ? 'MPが足りません' : '弾薬が足りません', innerWidth/2, innerHeight/2+70); }
+}
 function draw(me){
   const M = world();
   let W=innerWidth/ZOOM, H=innerHeight/ZOOM; // ここから世界の描画は、ズームアウトした広さで
@@ -1088,7 +1245,8 @@ function draw(me){
   for (const v of vis) { v.hid = hidden(v); if (v.hid && (v.mine || v.ally)) {
       ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true); ctx.restore(); } }
   // 弾（体の高さ）
-  ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,2.5,0,Math.PI*2); ctx.fill(); }
+  for (const b of state.bullets){ ctx.fillStyle = b.k===1 ? '#d9a2ff' : '#ffe28a'; ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,b.k===1?4:2.5,0,Math.PI*2); ctx.fill(); }
+  drawFx();
   // 名前・体力（いちばん上に）
   for (const v of vis) if (!v.hid || v.mine || v.ally) drawLabel(v);
   ctx.restore(); W=innerWidth; H=innerHeight; // ここから画面のUI
@@ -1114,6 +1272,11 @@ function draw(me){
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
   if (matchMedia('(pointer:coarse)').matches && (canRevive() || touch.act)) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
     ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center'; ctx.fillText('蘇生', b.x, b.y+5); }
+  if (matchMedia('(pointer:coarse)').matches && state.phase==='match' && mp && alive(mp)) for (const b of touchBtns()) {
+    const lit = touch.flash && touch.flash.k===b.k && performance.now()-touch.flash.at < 150;
+    ctx.fillStyle = lit ? 'rgba(255,226,138,.5)' : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(b.label, b.x, b.y+4); }
+  if (mp && alive(mp)) drawWeaponHud(mp, 16+SAFE.l, H-50-SAFE.b);
   if (mp) { const bx=16+SAFE.l, by=H-50-SAFE.b; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40); ctx.textAlign='left'; ctx.font='bold 11px sans-serif';
     if (mp.down) { ctx.fillStyle='#e55'; ctx.fillRect(bx,by,220*mp.dhp/DOWN_HP,12); ctx.fillStyle='#6cf'; ctx.fillRect(bx,by+18,220*mp.dsh/DOWN_SHIELD,12);
       ctx.fillStyle='#fff'; ctx.fillText(`ダウン体力 ${mp.dhp}`, bx+4, by+10); ctx.fillText(`ダウンシールド ${mp.dsh}（照準の向き）`, bx+4, by+28);
@@ -1157,7 +1320,7 @@ function renderResult(mp){
   let rows = '', last = -1;
   for (const p of ps) { const pl = placeOf(p), t = teamOf(p.slot), first = t !== last; last = t;
     rows += `<tr class="${p.id===myId?'me':''}${first?' tp':''}"><td>${first?(pl||'-'):''}</td><td style="color:${COLORS[p.slot%COLORS.length]}">${esc(p.name)}${p.bot?'<span class="tag"> BOT</span>':''}</td>
-      <td>${p.kills||0}</td><td>${p.kn||0}</td><td>${Math.round(p.dmg||0)}</td><td>${p.rvc||0}</td><td>${mmss(p.life||0)}</td><td>－</td><td>仮の銃</td></tr>`; }
+      <td>${p.kills||0}</td><td>${p.kn||0}</td><td>${Math.round(p.dmg||0)}</td><td>${p.rvc||0}</td><td>${mmss(p.life||0)}</td><td>－</td><td>${esc(isHost?mostUsed(p):(p.uw||'－'))}</td></tr>`; }
   $('resTxt').innerHTML = `<div style="font-size:26px">${head}</div><div class="sub" style="margin:4px 0 8px">勝者：${esc(state.winner||'なし')}</div>
     <div class="rwrap"><table class="rtab"><tr><th>順位</th><th>名前</th><th>キル</th><th>ダウン</th><th>与ダメ</th><th>蘇生</th><th>生存</th><th>ヒーロー</th><th>武器</th></tr>${rows}</table></div>`;
 }
