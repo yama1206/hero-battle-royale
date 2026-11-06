@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.1<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.2<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -144,7 +144,7 @@ const MED_P = [['m1',.375],['m2',.125],['s1',.375],['s2',.125]];
 const AMMO_PACK = 20, SWORD_STONE = 2;          // 仮：弾薬1個の弾数／剣のそばに落ちている砥石の数
 const DROP_AT = [180, 360, 480];                // 補給物資の投下（3分・6分・8分）
 const BOX_LIFE = 120000, OUT_VANISH = 5000;     // デスボックスは120秒。安全地帯の外の物が消えるまで5秒（仮）
-const BAG_SLOTS = 8, PICK_R = 50, AUTO_R = R+10, HOLD_SEC = 0.45, HEAL_MOVE = 0.5; // 拾える距離・長押しの長さ・回復中の移動速度は仮
+const BAG_SLOTS = 12, PICK_R = 50, AUTO_R = R+10, HOLD_SEC = 0.45, HEAL_MOVE = 0.5; // 拾える距離・長押しの長さ・回復中の移動速度は仮
 const CRAWL = 60;
 // 段階7：ダッシュ・回避・乗り越え（数値は仮）
 const DASH_MUL = 1.4, DASH_B = .06;          // ダッシュの速度倍率／ダッシュ中に増えるぶれ
@@ -527,7 +527,7 @@ function readInput(me){
     if (be(K.map)) toggleMap();
     const ui = setOpen || bagOpen || mapOpen || !!boxOpen; // 画面が開いているあいだは、十字キー・A・B・Xは画面の操作
     if (ui) uiPad(edge);
-    ptrUpdate(ui && !mapOpen ? lx||rx : 0, ui && !mapOpen ? ly||ry : 0);
+    ptrUpdate(ui && !mapOpen ? lx : 0, ui && !mapOpen ? ly : 0, ui && !mapOpen ? ry : 0);
     if (ptr.on) { /* カーソル操作中はスティックで動かない */ } else { if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; } }
     if (!setOpen && !ptr.on && (bp(K.fire) || bp(K.fire2))) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
@@ -1642,7 +1642,7 @@ function renderPanels(mp){
   if (boxOpen) { const b = state.loot && state.loot.boxes.find(x=>x.id===boxOpen);
     if (!b || !mp || !alive(mp) || (local && Math.hypot(b.x-local.x, b.y-local.y) > PICK_R+40)) closeBox();
     else { const h = `<h3><span>${esc(b.name)}のデスボックス</span>${cmdBtn('閉じる',{x:'box'},'sec')}</h3>` + (b.items.length
-        ? b.items.map(it=>`<div class="it"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>') + (navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? `<div class="sub hint">スティック：カーソル　${bn(0)}：押す　${bn(1)}：閉じる</div>` : '');
+        ? b.items.map(it=>`<div class="it"><i class="ic">${icon(it)}</i><span style="color:${itCol(it)}">${esc(itemText(it))}</span>${cmdBtn('取る',{c:'take',id:b.id,i:it.id})}</div>`).join('') : '<div class="sub">空っぽです</div>') + (navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? `<div class="sub hint">左スティック：カーソル　右スティック：スクロール　${bn(0)}：押す　${bn(1)}：閉じる</div>` : '');
       if (h !== lastBoxH) { lastBoxH = h; $('boxp').innerHTML = h; } } }
   if (bagOpen && mp && mp.bag) { const h = invHTML(mp); if (h !== lastBagH) { lastBagH = h; $('bagp').innerHTML = h; } }
 }
@@ -1729,18 +1729,19 @@ function invHTML(mp){
     det = b ? `<span style="color:${itCol(b)}">${esc(itemText(b))}${b.c==='p'?`<br><small>${partDesc(b.pk)}</small>`:ITEMS[b.c]&&ITEMS[b.c].time?`<br><small>${ITEMS[b.c].hp?'HP':'シールド'}+${ITEMS[b.c].hp||ITEMS[b.c].sh}・${ITEMS[b.c].time}秒</small>`:''}</span>`
         + (ITEMS[b.c] && ITEMS[b.c].time ? cmdBtn('使う',{c:'use',i}) : '') + (b.c==='p' && [0,1].some(s=>{ const w = wAt(mp, s); return w && PARTS[b.pk].fit(w); }) ? cmdBtn('付ける',{c:'equip',i}) : '') + (i ? cmdBtn('◀',{c:'up',i},'sec') : '') + cmdBtn('捨てる',{c:'drop',i},'sec')
       : `<span class="sub">空き</span>`; }
-  const pad = navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? `<div class="sub hint">スティック：カーソル　${bn(0)}：押す　${bn(2)}：選んでいる物を捨てる　${bn(1)}：閉じる</div>` : '';
+  const pad = navigator.getGamepads && [...navigator.getGamepads()].some(g=>g) ? `<div class="sub hint">左スティック：カーソル　右スティック：スクロール　${bn(0)}：押す　${bn(2)}：選んでいる物を捨てる　${bn(1)}：閉じる</div>` : '';
   return `<h3><span>持ち物</span>${cmdBtn('閉じる',{x:'bag'},'sec')}</h3><div class="wrow">${wcard(0)}${wcard(1)}</div><div class="grid">${slots}</div><div class="det">${det}</div>${pad}`;
 }
 const partDesc = k => ({ muz:'反動を減らす', mgs:'装弾数アップ（小口径）', mgl:'装弾数アップ（大口径）', stk:'ぶれが早く戻る', grp:'持ち替えが速い（剣は硬直短縮）', sgt:'基本のぶれを減らす', amp:'MP消費を減らす' })[k] || '';
 // ゲームパッドで画面を操作する（十字キー・A・B・X）
 // ゲームパッドのカーソル（パソコンのマウスのように自由に動かす）
 const ptr = { x:0, y:0, on:false, at:0, hov:null };
-function ptrUpdate(sx, sy){
+function ptrUpdate(sx, sy, ry){
   const want = !!(setOpen || bagOpen || boxOpen), n = performance.now(), el = $('ptr');
   if (want && !ptr.on) { const pn = $(boxOpen ? 'boxp' : bagOpen ? 'bagp' : 'setp').getBoundingClientRect(); ptr.x = pn.left + pn.width/2; ptr.y = pn.top + pn.height/2; ptr.at = n; }
   ptr.on = want; el.style.display = want ? 'block' : 'none'; if (!want) { if (ptr.hov) ptr.hov.classList.remove('hov'); ptr.hov = null; return; }
-  const dt = Math.min(0.05, (n - ptr.at)/1000); ptr.at = n; const m = Math.hypot(sx, sy), sp = 260 + 700*m*m;
+  const dt = Math.min(0.05, (n - ptr.at)/1000); ptr.at = n; const m = Math.hypot(sx, sy), sp = (260 + 700*m*m) * (0.4 + cfg.ptrSpd*0.12);
+  if (ry) { const pn = $(boxOpen ? 'boxp' : bagOpen ? 'bagp' : 'setp'); pn.scrollTop += ry*700*dt; } // 右スティック：画面をスクロール
   ptr.x = Math.max(0, Math.min(innerWidth-4, ptr.x + sx*sp*dt)); ptr.y = Math.max(0, Math.min(innerHeight-4, ptr.y + sy*sp*dt));
   el.style.transform = `translate(${ptr.x-3}px,${ptr.y-2}px)`;
   const t = document.elementFromPoint(ptr.x, ptr.y), b = t && t.closest('.panel button');
@@ -1759,7 +1760,7 @@ function uiPad(edge){
   if (invSel < 2) { if (Lf||Rt) invSel ^= 1; if (D) invSel = invSel ? 4 : 2; }
   else { const i = invSel-2, c = i%4, r = i/4|0;
     if (Lf && c > 0) invSel--; if (Rt && c < 3) invSel++;
-    if (U) invSel = r ? invSel-4 : (c < 2 ? 0 : 1); if (D && r < 1) invSel += 4; }
+    if (U) invSel = r ? invSel-4 : (c < 2 ? 0 : 1); if (D && r < mp.bag.length/4-1) invSel += 4; }
   if (A) { if (invSel < 2) { if (invSel !== mp.wp[4] && wAt(mp, invSel)) ctr.sw++; } else { const b = mp.bag[invSel-2]; if (b && ITEMS[b.c] && ITEMS[b.c].time) sendCmd({ c:'use', i:invSel-2 }); } }
   if (X) { if (invSel < 2) sendCmd({ c:'dropw', s:invSel }); else if (mp.bag[invSel-2]) sendCmd({ c:'drop', i:invSel-2 }); }
   if (B) toggleBag();
@@ -1773,7 +1774,7 @@ const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビ�
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
 const BTN_REST = ['十字↑','十字↓','十字←','十字→','ホーム'];
 const bn = i => ((PADS[cfg.padType]||PADS.xbox).b.concat(BTN_REST))[i] || ('ボタン'+i); // いまのボタン表示での名前
-const cfg = { bgm:40, vol:70, assist:1, dmgNum:1, padType:'xbox', bind:{...BIND0} };
+const cfg = { ptrSpd:5, bgm:40, vol:70, assist:1, dmgNum:1, padType:'xbox', bind:{...BIND0} };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){} cfg.bind = { ...BIND0, ...(cfg.bind||{}) }; if (!PADS[cfg.padType]) cfg.padType = 'xbox';
 const saveCfg = () => { try { localStorage.setItem('hbr_cfg', JSON.stringify(cfg)); } catch(e){} };
 const SETS = [
@@ -1781,6 +1782,7 @@ const SETS = [
   { k:'vol', name:'効果音の音量', show:()=>cfg.vol+'%', adj:d=>{ cfg.vol = Math.max(0, Math.min(100, cfg.vol+d*10)); } },
   { k:'assist', name:'エイムアシスト', show:()=>cfg.assist?'オン':'オフ', adj:()=>{ cfg.assist ^= 1; } },
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
+  { k:'ptrSpd', name:'🎮 カーソルの速さ', show:()=>cfg.ptrSpd, adj:d=>{ cfg.ptrSpd = Math.max(1, Math.min(10, cfg.ptrSpd+d)); } },
   { k:'padType', name:'🎮 ボタン表示', show:()=>PADS[cfg.padType].name, adj:d=>{ const ks = Object.keys(PADS); cfg.padType = ks[(ks.indexOf(cfg.padType)+(d<0?ks.length-1:1))%ks.length]; } },
   ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['dodge','回避・乗り越え'],['dash','ダッシュ（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
     .map(([b,name]) => ({ k:'b_'+b, bind:b, name:'🎮 '+name, show:()=>bindWait===b ? '押して…' : bn(cfg.bind[b]), adj:()=>{ bindWait = b; bindReady = false; } })),
