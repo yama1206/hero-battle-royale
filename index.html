@@ -23,6 +23,9 @@
   #roomInfo { display:none; } .code { font-size:32px; letter-spacing:6px; font-weight:800; color:var(--accent); text-align:center; margin:6px 0; }
   ul { list-style:none; padding:0; margin:8px 0; } li { padding:8px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; font-size:14px; }
   .tag { font-size:12px; color:var(--sub); } #msg { color:var(--ng); font-size:13px; min-height:18px; margin-top:8px; }
+  #heroSel { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; } #heroSel button { margin:0; padding:8px 2px; font-size:12px; background:#2c3450; color:var(--text); border:2px solid transparent; line-height:1.3; }
+  #heroSel button.on { border-color:var(--accent); background:#3a3320; } #heroSel b { display:block; font-size:13px; }
+  #heroInfo { font-size:12px; color:var(--sub); line-height:1.6; margin-top:6px; } #heroInfo b { color:var(--text); }
   .help { font-size:12px; color:var(--sub); margin-top:12px; line-height:1.6; }
   #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; }
   #hud { position:absolute; left:calc(12px + env(safe-area-inset-left)); top:calc(10px + env(safe-area-inset-top)); font-size:13px; background:rgba(0,0,0,.45); padding:8px 10px; border-radius:8px; pointer-events:none; }
@@ -55,8 +58,8 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.1<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -70,6 +73,7 @@
     <div id="teamBox"><label>チーム人数</label>
       <select id="teamSel"><option value="1">ソロ</option><option value="2" selected>2人</option><option value="3">3人</option><option value="4">4人</option><option value="5">5人</option></select></div>
     <div class="sub" id="teamTxt" style="margin:8px 0 0"></div>
+    <div id="heroBox"><label>ヒーロー（第1候補）</label><div id="heroSel"></div><div id="heroInfo"></div></div>
     <ul id="plist"></ul>
     <button id="btnStart" style="display:none">試合開始（空き枠はBOT）</button>
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
@@ -149,7 +153,29 @@ const CRAWL = 60;
 // 段階7：ダッシュ・回避・乗り越え（数値は仮）
 const DASH_MUL = 1.4, DASH_B = .06;          // ダッシュの速度倍率／ダッシュ中に増えるぶれ
 const DODGE_SPD = 600, DODGE_T = .25, DODGE_CD = 3; // 回避の速さ・時間（＝無敵時間）・クールタイム
-const VAULT_EXT = .35;                       // 乗り越え：障害物の上にいる間は最大この秒数まで回避を延ばす                    // ダウン中の這う速度
+// ===== ヒーロー（仕様6）。基本ステータスは共通、能力だけが違う。段階8.1はパッシブのみ動く =====
+const HEROES = {
+  raven: { name:'レイヴン', role:'索敵・探索', col:'#7c8cff',
+    p:['気配察知','敵の足音・銃声を25%遠くから察知し、方向を表示（壁越しも）'], q:['索敵パルス','半径300の敵を3秒探知',20], u:['ゴーストアイ','10秒間 広範囲の敵を探知',120] },
+  blaze: { name:'ブレイズ', role:'攻撃', col:'#ff6a3d',
+    p:['戦闘本能','敵をダウンさせると5秒間リロード速度+20%'], q:['フラッシュグレネード','半径108の敵を2秒目くらまし',25], u:['デッドリーラッシュ','12秒間 攻撃力・連射・リロード強化',120] },
+  sonia: { name:'ソニア', role:'機動力', col:'#3ddc97',
+    p:['軽業','回避のクールタイム 3秒→2.5秒'], q:['ブーストダッシュ','入力方向へ高速移動（距離210）',20], u:['ファントムステップ','8秒間 移動+40%・回避CD1秒',120] },
+  medi:  { name:'メディ', role:'支援', col:'#ffd04a',
+    p:['応急処置','回復アイテムの使用時間 -0.5秒'], q:['ヒールフィールド','半径108の味方を毎秒5回復（6秒）',30], u:['エリアリカバリー','半径180の味方をHP50回復・ダウンは蘇生',120] },
+  aegis: { name:'アイギス', role:'防衛', col:'#5ec8ff',
+    p:['装甲強化','シールド満タンの間、受けるダメージ-10%'], q:['バリア展開','前方に弾を防ぐ壁（耐久500・6秒）',20], u:['フォートレス','10秒間 弾を遮るドーム',120] },
+};
+const HIDS = Object.keys(HEROES);
+const BLAZE_T = 5000, BLAZE_RL = 1.2;  // 戦闘本能：5秒間、リロード時間を1/1.2
+const SONIA_DCD = 2.5;                 // 軽業：回避のクールタイム
+const MEDI_CUT = 0.5;                  // 応急処置：回復アイテムの使用時間を短縮
+const AEGIS_CUT = 0.9;                 // 装甲強化：シールド100のとき受けるダメージ×0.9
+const HEAR_SHOT = 1100, HEAR_STEP = 330, RAVEN_HEAR = 1.25; // 仮：銃声・足音が聞こえる距離。レイヴンは1.25倍
+const snOf = p => p.sn !== undefined && !isHost ? p.sn : Date.now()-(p.lastShot||0) < 250 ? 2 : (p.mvAmt||0) > 0.5 && !p.down ? 1 : 0; // 銃声2・足音1
+const bzOf = p => !isHost ? p.bz : (p.bzUntil||0) > Date.now() ? 1 : 0;
+const dodgeCd = p => p && p.hero==='sonia' ? SONIA_DCD : DODGE_CD;
+const VAULT_EXT = .35;                      // 乗り越え：障害物の上にいる間は最大この秒数まで回避を延ばす                    // ダウン中の這う速度
 const DOWN_HP = 100;                 // ダウン中の体力
 const DOWN_SHIELD = 200;             // ダウンシールド耐久（仕様：ノーマル200。レアリティで変わるのは後で）
 const DSHIELD_ARC = Math.PI/3;       // ダウンシールドの守る範囲（左右60°）
@@ -584,7 +610,7 @@ function localStep(dt){
   const nowMs = Date.now();
   if (inp.dodge && alive(me) && !me.down && !local.dg && nowMs >= (local.dgCd||0)) { // 回避：移動入力の方向、なければ向いている方向
     const m = Math.hypot(inp.mx, inp.my), dx = m > 0.2 ? inp.mx/m : inp.fx, dy = m > 0.2 ? inp.my/m : inp.fy;
-    local.dg = { t:DODGE_T, ext:0, x:dx, y:dy }; local.dgCd = nowMs + DODGE_CD*1000; ctr.dg++; sfx('dodge'); }
+    local.dg = { t:DODGE_T, ext:0, x:dx, y:dy }; local.dgCd = nowMs + dodgeCd(me)*1000; ctr.dg++; sfx('dodge'); }
   if (local.dg && (me.down || me.out)) local.dg = null;
   if (local.dg) { const g = local.dg, ox = local.x, oy = local.y; local.x += g.x*DODGE_SPD*dt; local.y += g.y*DODGE_SPD*dt; g.t -= dt;
     if (g.t <= 0) g.ext += dt; const cont = g.t > 0 || (onLow(local) && g.ext < VAULT_EXT); // 低い障害物の上なら越えきるまで続ける
@@ -599,7 +625,7 @@ function localStep(dt){
 function startHost(){
   roomCode = genCode(); isHost = true;
   peer = new Peer(PREFIX + roomCode);
-  peer.on('open', id => { myId = id; state.players = [{ id, name:myName(), bot:false, slot:0 }]; showRoom(); });
+  peer.on('open', id => { myId = id; state.players = [{ id, name:myName(), bot:false, slot:0, h1:myHero }]; showRoom(); });
   peer.on('connection', c => {
     c.on('open', () => {
       if (state.phase!=='lobby' || state.players.filter(p=>!p.bot).length >= MAX_PLAYERS) {
@@ -608,7 +634,8 @@ function startHost(){
     });
     c.on('data', d => {
       if (d.t==='hello') { const used=state.players.map(p=>p.slot); let slot=0; while(used.includes(slot)) slot++;
-        state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot }); renderList(); broadcast(); }
+        state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot, h1:HEROES[d.h1]?d.h1:'raven' }); renderList(); broadcast(); }
+      else if (d.t==='hero') { const p = state.players.find(p=>p.id===c.peer); if (p && state.phase==='lobby' && HEROES[d.h1]) { p.h1 = d.h1; renderList(); broadcast(); } }
       else if (d.t==='in') inputs[c.peer] = d;
       else if (d.t==='cmd') hostCmd(state.players.find(p=>p.id===c.peer), d);
     });
@@ -627,6 +654,7 @@ function hostStartMatch(){
   state.teamSize = +$('teamSel').value;
   const names = BOT_NAMES.filter(n=>!state.players.some(p=>p.name===n)).sort(()=>Math.random()-.5);
   for (let s=0;s<maxSlots();s++) if (!state.players.some(p=>p.slot===s)) state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s });
+  assignHeroes();
   // チームごとにまとまって配置
   const nTeams = Math.ceil(maxSlots()/state.teamSize), base = [];
   const a0 = Math.random()*Math.PI*2;
@@ -638,6 +666,15 @@ function hostStartMatch(){
   state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ev = []; state.drops = []; spawnLoot();
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
   broadcast(); enterGame();
+}
+// ヒーローを決める：同じチームで重なったら、使う人をランダムに決め、残りは空いているヒーローから（第2〜5候補は段階9で）
+function assignHeroes(){
+  const teams = {}; for (const p of state.players) (teams[teamOf(p.slot)] = teams[teamOf(p.slot)] || []).push(p);
+  for (const t in teams) { const used = new Set(), rest = [];
+    const ps = teams[t].slice().sort(()=>Math.random()-.5);
+    for (const p of ps) { if (!p.bot && HEROES[p.h1] && !used.has(p.h1)) { p.hero = p.h1; used.add(p.h1); } else rest.push(p); }
+    for (const p of rest) { const free = HIDS.filter(h=>!used.has(h)), pool = free.length ? free : HIDS;
+      p.hero = pool[Math.random()*pool.length|0]; used.add(p.hero); } }
 }
 function hostBackToLobby(){
   state.players = state.players.filter(p=>!p.bot);
@@ -654,7 +691,7 @@ function hostTick(dt){
     if (!inp) continue;
     // 回避（人間は押した回数で受け取る）：0.25秒無敵・攻撃できない・回復は取り消し。リロードは続く
     if (inp.dgc !== undefined) { if (p._dgc === undefined) p._dgc = inp.dgc;
-      else if (inp.dgc !== p._dgc) { p._dgc = inp.dgc; if (!p.down && now >= (p.dgCd||0)) { p.dgUntil = now + DODGE_T*1000; p.dgCd = now + DODGE_CD*1000; p.heal = null; } } }
+      else if (inp.dgc !== p._dgc) { p._dgc = inp.dgc; if (!p.down && now >= (p.dgCd||0)) { p.dgUntil = now + DODGE_T*1000; p.dgCd = now + dodgeCd(p)*1000 - 100; p.heal = null; } } }
     const dodging = now < (p.dgUntil||0);
     if (dodging && inp.fire) inp = Object.assign({}, inp, { fire:false });
     p.dash = !!inp.dash && !p.down;
@@ -723,6 +760,7 @@ function giveLoadout(p){ // 開始時は素手・持ち物なし（物資を拾�
 // 付けているパーツの効果（なければ0）
 const ptv = (p, s, k) => { const r = p.pt && p.pt[s] ? p.pt[s][k] : undefined; return r===undefined || r===null ? 0 : PARTS[k].v[r]; };
 function magCap(p, s){ const w = wAt(p, s); if (!w || !w.mag) return 0; return Math.ceil(w.mag*(1+ptv(p, s, w.ammo==='s'?'mgs':'mgl'))); }
+const rlTime = (p, w, now) => w.reload / ((p.bzUntil||0) > now ? BLAZE_RL : 1); // ブレイズ：戦闘本能
 const ammoCode = w => w.ammo==='s' ? 'as' : 'al';
 function weaponStep(p, inp, dt, now){
   // ボタンを押した回数が増えたか（BOTは doSw などで直接）
@@ -739,8 +777,8 @@ function weaponStep(p, inp, dt, now){
   if (w.ammo) { const ac = ammoCode(w), have = bagN(p, ac);
     if (p.rl > 0) { p.rl -= dt; if (p.rl <= 0) { const k = Math.min(cap - p.wp[mi], bagN(p, ac)); if (k > 0) { bagTake(p, ac, k); p.wp[mi] += k; } p.rl = 0; } } // 完了時に一括装填
     const want = pressed('Rl') || (p.wp[mi] === 0 && !inp.fire && have > 0);
-    if (want && !p.rl && p.wp[mi] < cap) { if (have > 0) { p.rl = p.rlT = w.reload; } else p.noAmmo = now; } // 弾切れは自動リロード
-    if (p.wp[mi] === 0 && inp.fire && !p.rl) { if (have > 0) p.rl = p.rlT = w.reload; else p.noAmmo = now; }
+    if (want && !p.rl && p.wp[mi] < cap) { if (have > 0) { p.rl = p.rlT = rlTime(p, w, now); } else p.noAmmo = now; } // 弾切れは自動リロード
+    if (p.wp[mi] === 0 && inp.fire && !p.rl) { if (have > 0) p.rl = p.rlT = rlTime(p, w, now); else p.noAmmo = now; }
   } else pressed('Rl');
   if (!inp.fire || p.heal) { p.trig = false; return; } // 回復中は攻撃できない
   const ready = p.cd <= 0 && p.swt <= 0 && !((p.inv||0) > now) && (w.auto || w.melee || w.magic || inp.ta || p.bot || !p.trig);
@@ -852,7 +890,8 @@ function autoPick(p){
 // 回復：使用時間のあいだ移動が遅く、攻撃できない。使い終わったときに消費（ダウンすると取り消し）
 function startHeal(p, code){ const it = code && ITEMS[code]; if (!it || !it.time || p.down || p.out || p.heal || bagN(p, code) <= 0) return;
   if ((it.hp && p.hp >= 100) || (it.sh && p.sh >= 100)) return;
-  p.heal = { c:code, t:Date.now()+it.time*1000, dur:it.time*1000 }; }
+  const tm = Math.max(0.5, it.time - (p.hero==='medi' ? MEDI_CUT : 0)); // メディ：応急処置
+  p.heal = { c:code, t:Date.now()+tm*1000, dur:tm*1000 }; }
 function autoHeal(p){ const has = c => bagN(p, c) > 0; // 回復ボタン：シールド→HPの順に、減っている量に合うものを選ぶ
   if (p.sh < 100) { if (100-p.sh >= 60 && has('s2')) return 's2'; if (has('s1')) return 's1'; if (has('s2')) return 's2'; }
   if (p.hp < 100) { if (100-p.hp >= 60 && has('m2')) return 'm2'; if (has('m1')) return 'm1'; if (has('m2')) return 'm2'; }
@@ -908,6 +947,7 @@ const mostUsed = p => { let b=null, n=0; for (const k in (p.wu||{})) if (p.wu[k]
 const byId = id => id ? state.players.find(x=>x.id===id) : null;
 function damage(p, dmg, b, now, center){
   if ((p.inv||0) > now || (p.dgUntil||0) > now) return; // 蘇生直後・回避中の無敵
+  if (p.hero==='aegis' && !p.down && p.sh >= 100) dmg = Math.max(1, Math.round(dmg*AEGIS_CUT)); // アイギス：装甲強化（安全地帯は対象外）
   pushEv({ k:'hit', x:Math.round(p.x), y:Math.round(p.y), d:dmg, c:center?1:0, o:b.o }); // ダメージ表示（撃った人の画面に出す）
   engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 撃たれた → そのチームのBOTも撃ってよい
   p.lastHitBy = b.o; p.hitAt = now;
@@ -931,7 +971,7 @@ function zoneHit(p, dmg, now){
 function goDown(p, by, now){
   p.hp=0; p.down=true; p.heal=null; p.dhp=DOWN_HP; p.dsh=DOWN_SHIELD; p.rv=0; p.downBy = by;
   p.bleedAt = now + BLEED[Math.min(p.downs, BLEED.length-1)]*1000; p.downs++; // ダウンするたび猶予が短くなる
-  const k = byId(by); if (k) k.kn++;
+  const k = byId(by); if (k) { k.kn++; if (k.hero==='blaze') k.bzUntil = now + BLAZE_T; } // 戦闘本能（重ねても5秒に更新）
   feed(k ? `${k.name} → ${p.name} ダウン` : `${p.name} ダウン（安全地帯の外）`);
   // 仮：チーム全員がダウン（またはソロでダウン）したら、蘇生できる人がいないのでチーム全員脱落
   const mates = state.players.filter(q=>teamOf(q.slot)===teamOf(p.slot) && !q.out);
@@ -1033,7 +1073,7 @@ function broadcast(){
   const now = Date.now();
   const tp = state.tplace || {};
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
-    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
+    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, hero:p.hero, h1:p.h1, bz:bzOf(p), sn:snOf(p), x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, dg:(p.dgUntil||0)>now?1:0, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
       wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k,b.id,b.w]),
@@ -1051,7 +1091,7 @@ function startJoin(){
   peer.on('open', id => {
     myId = id; hostConn = peer.connect(PREFIX+roomCode, { reliable:true });
     const to = setTimeout(()=>msg('部屋が見つかりません'), 8000);
-    hostConn.on('open', () => { clearTimeout(to); hostConn.send({ t:'hello', name:myName() }); showRoom(); });
+    hostConn.on('open', () => { clearTimeout(to); hostConn.send({ t:'hello', name:myName(), h1:myHero }); showRoom(); });
     hostConn.on('data', d => {
       if (d.t==='reject') { msg(d.reason); return; }
       if (d.t==='state') {
@@ -1081,10 +1121,21 @@ function renderList(){
   const md = MAPS[state.map] || MAPS.soltia; $('mapTxt').textContent = `マップ：${md.name}　${md.story}`;
   $('teamTxt').textContent = 'チーム：' + (state.teamSize===1 ? 'ソロ' : state.teamSize+'人');
   let h=''; for (let s=0;s<Math.max(maxSlots(), ...state.players.map(p=>p.slot+1));s++){ const p=state.players.find(p=>p.slot===s);
-    h+=`<li><span style="color:${COLORS[s]}">● ${p?esc(p.name):'（空き）'}</span><span class="tag">チーム${teamOf(s)+1}・${p?(p.bot?'BOT':(s===0?'ホスト':'参加')):(isHost?'開始時BOT':'空き')}${p&&p.id===myId?'・あなた':''}</span></li>`; }
+    const mine = state.players.find(q=>q.id===myId), hv = p && !p.bot && p.h1 && mine && teamOf(mine.slot)===teamOf(s) ? '（'+HEROES[p.h1].name+'）' : '';
+    h+=`<li><span style="color:${COLORS[s]}">● ${p?esc(p.name):'（空き）'}${hv}</span><span class="tag">チーム${teamOf(s)+1}・${p?(p.bot?'BOT':(s===0?'ホスト':'参加')):(isHost?'開始時BOT':'空き')}${p&&p.id===myId?'・あなた':''}</span></li>`; }
   $('plist').innerHTML = h;
 }
 $('teamSel').onchange = () => { renderList(); broadcast(); };
+// ヒーロー選択（ロビー）。選んだヒーローは次回も残す
+let myHero = 'raven'; try { const h = localStorage.getItem('hbr_hero'); if (HEROES[h]) myHero = h; } catch(e){}
+function renderHeroSel(){
+  $('heroSel').innerHTML = HIDS.map(k=>`<button data-h="${k}" class="${k===myHero?'on':''}"><b style="color:${HEROES[k].col}">${HEROES[k].name}</b>${HEROES[k].role}</button>`).join('');
+  const h = HEROES[myHero];
+  $('heroInfo').innerHTML = `<b>パッシブ「${h.p[0]}」</b> ${h.p[1]}<br><b>キュー「${h.q[0]}」</b> ${h.q[1]}（CT${h.q[2]}秒）<br><b>ウルト「${h.u[0]}」</b> ${h.u[1]}（CT${h.u[2]}秒）<br>※同じチームで重なったら、使う人はランダムで決まります`;
+}
+$('heroSel').onclick = e => { const b = e.target.closest('button'); if (!b) return; myHero = b.dataset.h; try { localStorage.setItem('hbr_hero', myHero); } catch(e){}
+  renderHeroSel(); if (isHost) { const me = state.players.find(p=>p.id===myId); if (me) me.h1 = myHero; renderList(); broadcast(); } else if (hostConn && hostConn.open) hostConn.send({ t:'hero', h1:myHero }); };
+renderHeroSel();
 $('mapSel').innerHTML = Object.entries(MAPS).map(([k,m])=>`<option value="${k}">${esc(m.name)}</option>`).join('');
 $('mapSel').onchange = () => { renderList(); buildWorld(state.map); broadcast(); };
 
@@ -1453,7 +1504,10 @@ function drawFx(){
 // ===== 武器の表示（左下、体力の上） =====
 function drawWeaponHud(mp, bx, by){
   if (local && alive(mp)) { const left = Math.max(0, ((local.dgCd||0) - Date.now())/1000); ctx.textAlign='left'; ctx.font='bold 12px sans-serif';
-    ctx.fillStyle='#000a'; ctx.fillRect(bx-4, by-82, 92, 18); ctx.fillStyle = left ? '#9aa4c0' : '#8fd'; ctx.fillText(left ? `回避 ${left.toFixed(1)}` : '回避 OK', bx+2, by-68); }
+    ctx.fillStyle='#000a'; ctx.fillRect(bx-4, by-82, 92, 18); ctx.fillStyle = left ? '#9aa4c0' : '#8fd'; ctx.fillText(left ? `回避 ${left.toFixed(1)}` : '回避 OK', bx+2, by-68);
+    const h = HEROES[mp.hero]; if (h) { const on = (mp.hero==='blaze' && bzOf(mp)) || (mp.hero==='aegis' && mp.sh>=100); // ヒーローとパッシブ
+      ctx.fillStyle='#000a'; ctx.fillRect(bx+92, by-82, 132, 18); ctx.fillStyle=h.col; ctx.fillText(h.name, bx+98, by-68);
+      ctx.fillStyle = on ? '#ffe28a' : '#9aa4c0'; ctx.font='11px sans-serif'; ctx.fillText(h.p[0] + (on ? ' 発動中' : ''), bx+98+ctx.measureText(h.name).width*1.1+6, by-68); } }
   const w = wOf(mp), cur = mp.wp[4], mag = mp.wp[cur*2+1], ow = wAt(mp, cur^1), other = { name: ow ? ow.name : 'なし' };
   if (!w) { const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left'; ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif';
     ctx.fillText('武器なし', bx+4, y+12); ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(ow ? `もう1つ：${ow.name}（切替）` : 'チェストを開けて武器を拾おう', bx+4, y+36); return; }
@@ -1471,6 +1525,16 @@ function drawWeaponHud(mp, bx, by){
   if (mp.na) { ctx.textAlign='center'; ctx.font='bold 18px sans-serif'; ctx.fillStyle='#ff8a8a';
     ctx.fillText(w.melee ? '砥石がありません' : w.magic ? 'MPが足りません' : '弾薬が足りません', innerWidth/2, innerHeight/2+70); }
 }
+// レイヴン「気配察知」：画面外・物陰の敵の銃声（橙）と足音（白）の方向を、自分のまわりに表示。位置やHPは出さない
+function drawHear(mp, pos, vis, W, H){ const hid = new Set(vis.filter(v=>v.hid).map(v=>v.p.id)), my = teamOf(mp.slot);
+  ctx.save(); ctx.translate(W/2, H/2 - BODY_H*ZOOM);
+  for (const q of state.players) { const sn = snOf(q); if (q.out || !sn || teamOf(q.slot)===my) continue;
+    const qx = isHost ? q.x : q.dx, qy = isHost ? q.y : q.dy, dx = qx-pos.x, dy = qy-pos.y, d = Math.hypot(dx, dy);
+    if (d > (sn===2 ? HEAR_SHOT : HEAR_STEP)*RAVEN_HEAR) continue;
+    const onScr = Math.abs(dx)*ZOOM < W/2 && Math.abs(dy)*ZOOM < H/2; if (onScr && !hid.has(q.id)) continue;
+    const a = Math.atan2(dy, dx); ctx.save(); ctx.rotate(a); ctx.globalAlpha = sn===2 ? .9 : .6;
+    ctx.strokeStyle = sn===2 ? '#ffa040' : '#fff'; ctx.lineWidth = sn===2 ? 5 : 3; ctx.beginPath(); ctx.arc(0, 0, 92, -0.22, 0.22); ctx.stroke(); ctx.restore(); }
+  ctx.restore(); }
 function draw(me){
   const M = world();
   let W=innerWidth/ZOOM, H=innerHeight/ZOOM; // ここから世界の描画は、ズームアウトした広さで
@@ -1552,6 +1616,7 @@ function draw(me){
       ctx.save(); ctx.translate(ox, oy); ctx.rotate(a); ctx.fillStyle = outNow ? 'rgba(255,120,120,.9)' : 'rgba(255,255,255,.75)';
       ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(-8,-10); ctx.lineTo(-3,0); ctx.lineTo(-8,10); ctx.closePath(); ctx.fill(); ctx.restore(); }
   }
+  if (mp && alive(mp) && mp.hero==='raven' && pos) drawHear(mp, pos, vis, W, H);
   if (state.zone) drawMini(zn, pos, mp, W);
   camPos = pos; selfSounds(mp);
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
