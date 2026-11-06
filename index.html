@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.0<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.7.1<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1309,11 +1309,11 @@ function drawObj(o,t){
     case 'crate': return drawCrate(o); case 'barrel': return drawBarrel(o); case 'rock': return drawRock(o); case 'fountain': return drawFountain(o,t);
     case 'stall': return drawStall(o); case 'lh': return drawLh(o);
     case 'pillar': boxFace(o,'#8a7862','#6d5d4b'); ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(o.x+3,o.y+o.h-o.ht,4,o.ht); return;
-    case 'timber': { boxFace(o,'#916b42','#7d5c38'); ctx.fillStyle='#c9a46e'; for (let xx=o.x+8; xx<o.x+o.w-4; xx+=14) { ctx.beginPath(); ctx.arc(xx,o.y+o.h-10,6,0,Math.PI*2); ctx.fill(); } return; }
-    case 'scaf': { const {x,y,w,h,ht}=o; ctx.fillStyle='#5a4630'; for (let yy=y; yy<y+h; yy+=70) ctx.fillRect(x+2,yy-ht,4,ht+8);
-      ctx.fillStyle='#b08a55'; ctx.fillRect(x,y-ht,w,h); ctx.strokeStyle='rgba(60,40,20,.45)'; ctx.lineWidth=1; ctx.beginPath(); for (let yy=y-ht+8; yy<y+h-ht; yy+=9) { ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); } ctx.stroke();
-      ctx.fillStyle='#6e5435'; ctx.fillRect(x,y+h-ht,w,ht); return; }
-    case 'keel': return boxFace(o,'#7a5432','#5a3c22');
+    case 'timber': { boxFace(o,'#d2a83a','#a8842a'); ctx.fillStyle='#f2d878'; for (let xx=o.x+8; xx<o.x+o.w-4; xx+=14) { ctx.beginPath(); ctx.arc(xx,o.y+o.h-10,6,0,Math.PI*2); ctx.fill(); } return; }
+    case 'scaf': { const {x,y,w,h,ht}=o; ctx.fillStyle='#7a6220'; for (let yy=y; yy<y+h; yy+=70) ctx.fillRect(x+2,yy-ht,4,ht+8);
+      ctx.fillStyle='#dcb440'; ctx.fillRect(x,y-ht,w,h); ctx.strokeStyle='rgba(90,70,10,.45)'; ctx.lineWidth=1; ctx.beginPath(); for (let yy=y-ht+8; yy<y+h-ht; yy+=9) { ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); } ctx.stroke();
+      ctx.fillStyle='#a8882a'; ctx.fillRect(x,y+h-ht,w,ht); return; }
+    case 'keel': return boxFace(o,'#c8a030','#9a7a1e'); // 低い障害物（乗り越えられる）は黄色っぽくする
   }
 }
 function drawDeco(d,t){
