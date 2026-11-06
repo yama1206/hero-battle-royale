@@ -2,14 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>ヒーローバトルロイヤル（試作）</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   :root { --bg:#10131a; --panel:#1b2030; --line:#2c3450; --text:#e8ecf5; --sub:#8f9ab8; --accent:#ffb347; --ok:#5bd68a; --ng:#ff6b6b; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
-  #lobby { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; }
+  #lobby { position:absolute; inset:0; display:flex; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); overflow-y:auto; touch-action:pan-y; }
+  #lobby .card { margin:auto; }
+  #safe { position:fixed; visibility:hidden; pointer-events:none; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .card { width:100%; max-width:420px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
   h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--sub); font-size:13px; margin-bottom:16px; }
   label { display:block; font-size:13px; color:var(--sub); margin:10px 0 4px; }
@@ -22,16 +24,16 @@
   .tag { font-size:12px; color:var(--sub); } #msg { color:var(--ng); font-size:13px; min-height:18px; margin-top:8px; }
   .help { font-size:12px; color:var(--sub); margin-top:12px; line-height:1.6; }
   #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; }
-  #hud { position:absolute; left:12px; top:10px; font-size:13px; background:rgba(0,0,0,.45); padding:8px 10px; border-radius:8px; pointer-events:none; }
-  #timer { position:absolute; left:50%; top:10px; transform:translateX(-50%); font-size:22px; font-weight:800; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:8px; pointer-events:none; }
-  #feed { position:absolute; right:12px; top:10px; font-size:13px; text-align:right; pointer-events:none; }
+  #hud { position:absolute; left:calc(12px + env(safe-area-inset-left)); top:calc(10px + env(safe-area-inset-top)); font-size:13px; background:rgba(0,0,0,.45); padding:8px 10px; border-radius:8px; pointer-events:none; }
+  #timer { position:absolute; left:50%; top:calc(10px + env(safe-area-inset-top)); transform:translateX(-50%); font-size:22px; font-weight:800; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:8px; pointer-events:none; }
+  #feed { position:absolute; right:calc(12px + env(safe-area-inset-right)); top:calc(10px + env(safe-area-inset-top)); font-size:13px; text-align:right; pointer-events:none; }
   #feed div { background:rgba(0,0,0,.45); padding:3px 8px; border-radius:6px; margin-bottom:4px; }
   #result { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
   #result .card { text-align:center; } #resTxt { font-size:24px; font-weight:800; }
 </style>
 </head>
 <body>
-<div id="lobby"><div class="card">
+<div id="safe"></div><div id="lobby"><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階3.6：港町ソルティア</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -340,7 +342,8 @@ function losClear(a,b){ const n = Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/20); for
 // ===== 入力（自分） =====
 const keys = {}; let mouse = { x:0, y:0, down:false, used:false };
 const touch = { move:null, aim:null, act:null };
-const actBtn = () => ({ x:innerWidth-80, y:innerHeight-170, r:38 });
+const SAFE = { t:0, r:0, b:0, l:0 }; // ノッチなどで隠れる端の幅
+const actBtn = () => ({ x:innerWidth-80-SAFE.r, y:innerHeight-(innerWidth>innerHeight?120:170)-SAFE.b, r:38 }); // 横画面では少し下に
 addEventListener('keydown', e => keys[e.code]=true); addEventListener('keyup', e => keys[e.code]=false);
 addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
@@ -591,8 +594,13 @@ $('mapSel').onchange = () => { renderList(); buildWorld(state.map); broadcast();
 
 // ===== ゲーム画面 =====
 const cv=$('cv'), ctx=cv.getContext('2d');
-function resize(){ const r=devicePixelRatio||1; cv.width=innerWidth*r; cv.height=innerHeight*r; ctx.setTransform(r,0,0,r,0,0); }
+function resize(){ const r=devicePixelRatio||1; cv.width=innerWidth*r; cv.height=innerHeight*r; ctx.setTransform(r,0,0,r,0,0);
+  const cs=getComputedStyle($('safe')); SAFE.t=parseFloat(cs.paddingTop)||0; SAFE.r=parseFloat(cs.paddingRight)||0; SAFE.b=parseFloat(cs.paddingBottom)||0; SAFE.l=parseFloat(cs.paddingLeft)||0; }
 addEventListener('resize', resize);
+// 画面の向きが変わったとき：サイズが確定するまで少し待って測り直し、押しっぱなしのスティックも外す
+function onRotate(){ touch.move=touch.aim=touch.act=null; resize(); setTimeout(resize,150); setTimeout(resize,500); }
+addEventListener('orientationchange', onRotate);
+if (window.visualViewport) visualViewport.addEventListener('resize', resize);
 cv.addEventListener('touchstart',tStart,{passive:false}); cv.addEventListener('touchmove',tMove,{passive:false});
 cv.addEventListener('touchend',tEnd,{passive:false}); cv.addEventListener('touchcancel',tEnd,{passive:false});
 cv.addEventListener('contextmenu', e=>e.preventDefault());
@@ -986,7 +994,7 @@ function draw(me){
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
   if (matchMedia('(pointer:coarse)').matches) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
     ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center'; ctx.fillText('蘇生', b.x, b.y+5); }
-  if (mp) { const bx=16, by=H-50; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40); ctx.textAlign='left'; ctx.font='bold 11px sans-serif';
+  if (mp) { const bx=16+SAFE.l, by=H-50-SAFE.b; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40); ctx.textAlign='left'; ctx.font='bold 11px sans-serif';
     if (mp.down) { ctx.fillStyle='#e55'; ctx.fillRect(bx,by,220*mp.dhp/DOWN_HP,12); ctx.fillStyle='#6cf'; ctx.fillRect(bx,by+18,220*mp.dsh/DOWN_SHIELD,12);
       ctx.fillStyle='#fff'; ctx.fillText(`ダウン体力 ${mp.dhp}`, bx+4, by+10); ctx.fillText(`ダウンシールド ${mp.dsh}（照準の向き）`, bx+4, by+28);
       ctx.font='bold 24px sans-serif'; ctx.textAlign='center'; ctx.fillText(`ダウン中　あと${mp.bl}秒　味方の蘇生を待とう`, W/2, H/2-70); }
