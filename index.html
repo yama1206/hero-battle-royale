@@ -27,7 +27,7 @@
   #heroSel button.on { border-color:var(--accent); background:#3a3320; } #heroSel b { display:block; font-size:13px; }
   #heroInfo { font-size:12px; color:var(--sub); line-height:1.6; margin-top:6px; } #heroInfo b { color:var(--text); }
   .help { font-size:12px; color:var(--sub); margin-top:12px; line-height:1.6; }
-  #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; }
+  #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; cursor:none; }
   #hud { position:absolute; left:calc(12px + env(safe-area-inset-left)); top:calc(10px + env(safe-area-inset-top)); font-size:13px; background:rgba(0,0,0,.45); padding:8px 10px; border-radius:8px; pointer-events:none; }
   #timer { position:absolute; left:50%; top:calc(10px + env(safe-area-inset-top)); transform:translateX(-50%); font-size:22px; font-weight:800; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:8px; pointer-events:none; }
   #timer { text-align:center; } #timer .ztxt { font-size:12px; font-weight:700; color:#bcd3ff; } #timer .ztxt.warn { color:#ff9a9a; }
@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.4<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -105,15 +105,15 @@ const WEAPONS = {
   sr:    { name:'標準SR',         cat:'SR',  ammo:'l', dmg:80, mag:4,  rate:1,   reload:2.5, auto:false, eff:660, max:900, spd:900, falloff:.7, base:.005, bloom:.2,  maxB:.25, rec:.35, moveB:.1,  fireMove:.6, center:true },
   sword: { name:'剣',             cat:'近接', melee:true, dmg:35, rate:1.5, reach:39, arc:Math.PI/2, swings:10, fireMove:.9 }, // reach＝仕様65×0.6。砥石1個で10回
   staff: { name:'魔法の杖',       cat:'魔法', magic:true, dmg:18, rate:3, mpCost:10, eff:360, max:480, spd:390, falloff:1, base:.01, bloom:0, maxB:0, rec:1, moveB:0, fireMove:.75,
-           area:{ dist:300, r:80, delay:1.0, dmg:35, mp:30, cd:1.2, move:.5 } }, // 範囲攻撃（数値は仮）：前方300の地点に半径80、1秒後に爆発
+           area:{ dist:300, start:40, aimSpd:300, r:80, delay:1.0, dmg:35, mp:50, cd:1.2, move:.5 } }, // 範囲攻撃：押している間、自分の近く(40)から狙う方向へ円が進み（毎秒300・最大300）、離したところで1秒後に爆発。MP50（りょうさんの指示）
 };
 const WIDS = Object.keys(WEAPONS);
 const AMMO_NAME = { s:'小口径弾', l:'大口径弾' };
-const MP_MAX = 100, MP_REGEN = 10, SWITCH_SEC = 0.3; // 武器の持ち替え時間は仮
+const MP_MAX = 100, MP_REGEN = 4,  /* りょうさんの指示：回復を遅く（10→4/秒） */ SWITCH_SEC = 0.3; // 武器の持ち替え時間は仮
 const wAt = (p, s) => p && p.wp && p.wp[s*2] >= 0 ? WEAPONS[WIDS[p.wp[s*2]]] : null; // 枠s（0か1）の武器。なければnull
 const wOf = p => p && p.wp ? wAt(p, p.wp[4]) : null; // いま持っている武器
 // 撃っているときの移動速度の倍率（魔法の詠唱中はさらに遅い）
-const moveMul = (p, firing) => { if (p && (p.heal || p.hl)) return HEAL_MOVE; const w = wOf(p); if (!w) return 1; if (p.cast || p.cs) return w.area.move; return firing ? w.fireMove : 1; };
+const moveMul = (p, firing) => { if (p && (p.heal || p.hl)) return HEAL_MOVE; const w = wOf(p); if (!w) return 1; if (p.cast || p.cs || p.aimA || p.ac) return w.area.move; return firing ? w.fireMove : 1; };
 // ===== 物資（仕様2・3・4）。数値は仕様どおり。仕様にない数値は「仮」と書いてあります =====
 // stack＝1枠に入る数（回復アイテムは最大所持数と同じ）。time＝使用時間（秒）
 const ITEMS = {
@@ -745,6 +745,7 @@ function hostTick(dt){
       else if (inp.dgc !== p._dgc) { p._dgc = inp.dgc; if (!p.down && now >= (p.dgCd||0)) { p.dgUntil = now + DODGE_T*1000; p.dgCd = now + dodgeCd(p)*1000 - 100; p.heal = null; } } }
     cueStep(p, inp, now);
     const dodging = now < (p.dgUntil||0);
+    if (dodging) p.aimA = null;
     if ((dodging || now < (p.bdUntil||0) || (p.bot && now < (p.blindUntil||0))) && inp.fire) inp = Object.assign({}, inp, { fire:false }); // 回避中・ブーストダッシュ中は撃てない。目くらましのBOTも撃たない
     p.dash = !!inp.dash && !p.down;
     const sp = p.down ? CRAWL : SPEED*moveMul(p, inp.fire && !p.down);
@@ -835,6 +836,18 @@ function weaponStep(p, inp, dt, now){
     if (want && !p.rl && p.wp[mi] < cap) { if (have > 0) { p.rl = p.rlT = rlTime(p, w, now); } else p.noAmmo = now; } // 弾切れは自動リロード
     if (p.wp[mi] === 0 && inp.fire && !p.rl) { if (have > 0) p.rl = p.rlT = rlTime(p, w, now); else p.noAmmo = now; }
   } else pressed('Rl');
+  if (w.magic && p.mm) { // 魔法の範囲攻撃：押している間は狙いの円を動かし、離したら詠唱
+    const a = w.area, cost = a.mp*(1-ptv(p,sl,'amp'));
+    if (p.heal) { p.aimA = null; p.trig = !!inp.fire; return; }
+    if (inp.fire && !p.cast && p.cd <= 0 && p.swt <= 0 && !((p.inv||0) > now)) {
+      if (!p.aimA) { if (p.trig) return; if (p.mp < cost) { p.noAmmo = now; p.trig = true; return; } p.aimA = { d:a.start }; }
+      p.trig = true; p.aimA.d = Math.min(a.dist, p.aimA.d + a.aimSpd*dt);
+      p.aimA.x = Math.round(Math.max(0, Math.min(MAP, p.x+p.ax*p.aimA.d))); p.aimA.y = Math.round(Math.max(0, Math.min(MAP, p.y+p.ay*p.aimA.d))); return; }
+    if (p.aimA && !inp.fire) { const t = p.aimA; p.aimA = null;
+      if (p.mp >= cost) { p.mp -= cost; p.cd = a.cd; p.lastAtk = now; p.wu[p.wp[sl*2]] = (p.wu[p.wp[sl*2]]||0)+1; if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS;
+        p.cast = { x:t.x, y:t.y, r:a.r, at:now+a.delay*1000, o:p.id, tm:teamOf(p.slot) }; state.casts.push(p.cast); } }
+    p.trig = !!inp.fire; return; }
+  p.aimA = null;
   if (!inp.fire || p.heal) { p.trig = false; return; } // 回復中は攻撃できない
   const ready = p.cd <= 0 && p.swt <= 0 && !((p.inv||0) > now) && (w.auto || w.melee || w.magic || inp.ta || p.bot || !p.trig);
   p.trig = true;
@@ -852,12 +865,6 @@ function weaponStep(p, inp, dt, now){
     if (++p.swg >= w.swings) { p.swg = 0; bagTake(p,'st',1); } // 10回で砥石1個
     return; }
   const amp = 1 - ptv(p,sl,'amp');
-  if (w.magic && p.mm) { // 魔法の範囲攻撃：前方の地点に円を出し、少しあとで爆発。詠唱中は遅くなる
-    const a = w.area; if (p.cast) return; if (p.mp < a.mp*amp) { p.noAmmo = now; return; }
-    p.mp -= a.mp*amp; p.cd = a.cd; p.lastAtk = now; p.wu[wid] = (p.wu[wid]||0)+1;
-    let tx = p.x+p.ax*a.dist, ty = p.y+p.ay*a.dist; tx = Math.max(0,Math.min(MAP,tx)); ty = Math.max(0,Math.min(MAP,ty));
-    p.cast = { x:Math.round(tx), y:Math.round(ty), r:a.r, at:now+a.delay*1000, o:p.id, tm:teamOf(p.slot) }; state.casts.push(p.cast);
-    return; }
   if (w.magic) { if (p.mp < w.mpCost*amp) { p.noAmmo = now; return; } p.mp -= w.mpCost*amp; }
   else { if (p.wp[mi] <= 0) return; p.rl = 0; p.wp[mi]--; } // 撃つとリロードは取り消し（弾が残っているとき）
   const sp = w.base*(1-ptv(p,sl,'sgt')) + p.bl + w.moveB*Math.min(1, p.mvAmt||0) + (p.dash && (p.mvAmt||0) > 0.2 ? DASH_B : 0), ang = aim + (Math.random()-.5)*2*sp; // サイトで基本のぶれが減る
@@ -1130,7 +1137,7 @@ function broadcast(){
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
     players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, hero:p.hero, h1:p.h1, bz:bzOf(p), sn:snOf(p), qcd:+qcdOf(p).toFixed(1), bdr:blindOf(p), spt:p.spot ? Object.keys(p.spot).filter(t=>p.spot[t]>now).map(Number) : 0, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, dg:(p.dgUntil||0)>now?1:0, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
-      wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
+      wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, ac:p.aimA&&p.aimA.x!==undefined?[p.aimA.x,p.aimA.y]:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k,b.id,b.w]),
     ev: state.ev||[], abp: state.phase==='match' ? packAb() : null, casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
   if (state.loot && state.loot.v !== sentLootV && now - lootSentAt > 200) { sentLootV = state.loot.v; lootSentAt = now; s.loot = packLoot(state.loot); } // 物資は変わったときだけ送る
@@ -1542,6 +1549,9 @@ function takeEvents(ev){ for (const e of ev||[]) { if (e.id <= lastEv) continue;
     fxs.push(Object.assign({}, e, { t0:performance.now(), jx:(Math.random()-.5)*24 })); } }
 function drawFx(){
   const n = performance.now();
+  for (const q of state.players) { const t = isHost ? (q.aimA && q.aimA.x!==undefined ? [q.aimA.x, q.aimA.y] : 0) : q.ac; if (!t || q.out) continue; // 範囲攻撃の狙い（離すとここで詠唱）
+    ctx.save(); ctx.setLineDash([8,6]); ctx.lineDashOffset = -n/30; ctx.strokeStyle='rgba(210,150,255,.9)'; ctx.lineWidth=2; ctx.fillStyle='rgba(190,120,255,.08)';
+    ctx.beginPath(); ctx.arc(t[0], t[1], WEAPONS.staff.area.r, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.restore(); }
   for (const c of state.casts||[]) { const left = Math.max(0, c.at-Date.now())/ (WEAPONS.staff.area.delay*1000);
     ctx.fillStyle='rgba(190,120,255,.18)'; ctx.strokeStyle='rgba(210,150,255,.9)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,Math.PI*2); ctx.fill(); ctx.stroke();
@@ -1607,6 +1617,20 @@ function drawHear(mp, pos, vis, W, H){ const hid = new Set(vis.filter(v=>v.hid).
     const a = Math.atan2(dy, dx); ctx.save(); ctx.rotate(a); ctx.globalAlpha = sn===2 ? .9 : .6;
     ctx.strokeStyle = sn===2 ? '#ffa040' : '#fff'; ctx.lineWidth = sn===2 ? 5 : 3; ctx.beginPath(); ctx.arc(0, 0, 92, -0.22, 0.22); ctx.stroke(); ctx.restore(); }
   ctx.restore(); }
+// 照準：マウスはカーソルの位置、コントローラー・スマホは狙う方向の先（武器の有効射程くらい）。すき間は今のぶれの大きさ
+function drawCrosshair(mp, me, W, H){ if (!cfg.chA) return;
+  const w = wOf(mp), cx = W/2, cy = H/2, a = cfg.chA/100, col = CH_COL[cfg.chCol][1], sz = 0.6 + cfg.chSize*0.08;
+  let x, y, D;
+  if (mouse.used && performance.now()-mouseAt < 4000 && !navigator.getGamepads?.().some?.(g=>g&&g.axes&&Math.hypot(g.axes[2]||0,g.axes[3]||0)>0.3)) { x = mouse.x; y = mouse.y; D = Math.hypot(x-cx, y-cy)/ZOOM; }
+  else { D = Math.max(110, Math.min(w ? (w.melee ? w.reach+40 : w.magic && mp.mm ? 200 : w.eff) : 90, Math.min(W, H)*0.42/ZOOM)); x = cx + me.ax*D*ZOOM; y = cy + me.ay*D*ZOOM; }
+  const sp = w && !w.melee ? w.base + w.moveB*Math.min(1, me.mv||0) + (me.dash && (me.mv||0) > .2 ? DASH_B : 0) : 0;
+  const gap = Math.max(4, Math.min(60, Math.tan(sp)*D*ZOOM)) * sz, len = 7*sz;
+  ctx.save(); ctx.lineCap = 'round';
+  if (cfg.chLine) { const ux = x-cx, uy = y-cy, d = Math.hypot(ux, uy)||1; ctx.globalAlpha = a*0.35; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([6,6]);
+    ctx.beginPath(); ctx.moveTo(cx+ux/d*24, cy+uy/d*24); ctx.lineTo(x-ux/d*(gap+2), y-uy/d*(gap+2)); ctx.stroke(); ctx.setLineDash([]); }
+  for (const [lw, c] of [[4, 'rgba(0,0,0,.6)'], [2, col]]) { ctx.globalAlpha = a; ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.beginPath();
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) { ctx.moveTo(x+dx*gap, y+dy*gap); ctx.lineTo(x+dx*(gap+len), y+dy*(gap+len)); } ctx.stroke(); }
+  ctx.globalAlpha = a; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 1.6*sz, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
 function draw(me){
   const M = world();
   let W=innerWidth/ZOOM, H=innerHeight/ZOOM; // ここから世界の描画は、ズームアウトした広さで
@@ -1708,6 +1732,7 @@ function draw(me){
     const lit = touch.flash && touch.flash.k===b.k && performance.now()-touch.flash.at < 150;
     ctx.fillStyle = lit ? 'rgba(255,226,138,.5)' : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
     ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(b.label, b.x, b.y+4); }
+  if (mp && alive(mp) && me && !setOpen && !bagOpen && !mapOpen && !boxOpen && !ring.open) drawCrosshair(mp, me, W, H);
   if (mp && alive(mp)) drawWeaponHud(mp, 16+SAFE.l, H-50-SAFE.b);
   { const bl = blindOf(mp); if (bl > 0) { ctx.fillStyle = `rgba(255,255,245,${Math.min(.97, bl/700)})`; ctx.fillRect(0, 0, W, H); } } // 目くらまし
   if (mp) { const bx=16+SAFE.l, by=H-50-SAFE.b; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40); ctx.textAlign='left'; ctx.font='bold 11px sans-serif';
@@ -1938,13 +1963,18 @@ const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビ�
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
 const BTN_REST = ['十字↑','十字↓','十字←','十字→','ホーム'];
 const bn = i => ((PADS[cfg.padType]||PADS.xbox).b.concat(BTN_REST))[i] || ('ボタン'+i); // いまのボタン表示での名前
-const cfg = { ptrSpd:5, bgm:40, vol:70, assist:1, dmgNum:1, padType:'xbox', bind:{...BIND0} };
+const CH_COL = [['白','#ffffff'],['赤','#ff4d4d'],['緑','#4dff7a'],['黄','#ffe14d'],['水色','#4de1ff'],['ピンク','#ff6ad5']];
+const cfg = { ptrSpd:5, bgm:40, vol:70, assist:1, dmgNum:1, chCol:0, chA:80, chLine:1, chSize:5, padType:'xbox', bind:{...BIND0} };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){} cfg.bind = { ...BIND0, ...(cfg.bind||{}) }; if (cfg.bind.cue===cfg.bind.fire2) cfg.bind.fire2 = 11; if (!PADS[cfg.padType]) cfg.padType = 'xbox';
 const saveCfg = () => { try { localStorage.setItem('hbr_cfg', JSON.stringify(cfg)); } catch(e){} };
 const SETS = [
   { k:'bgm', name:'BGMの音量', show:()=>cfg.bgm+'%', adj:d=>{ cfg.bgm = Math.max(0, Math.min(100, cfg.bgm+d*10)); } },
   { k:'vol', name:'効果音の音量', show:()=>cfg.vol+'%', adj:d=>{ cfg.vol = Math.max(0, Math.min(100, cfg.vol+d*10)); } },
   { k:'assist', name:'エイムアシスト', show:()=>cfg.assist?'オン':'オフ', adj:()=>{ cfg.assist ^= 1; } },
+  { k:'chCol', name:'照準の色', show:()=>CH_COL[cfg.chCol][0], adj:d=>{ cfg.chCol = (cfg.chCol + (d<0?CH_COL.length-1:1)) % CH_COL.length; } },
+  { k:'chA', name:'照準の濃さ', show:()=>cfg.chA+'%', adj:d=>{ cfg.chA = Math.max(0, Math.min(100, cfg.chA+d*10)); } },
+  { k:'chSize', name:'照準の大きさ', show:()=>cfg.chSize, adj:d=>{ cfg.chSize = Math.max(1, Math.min(10, cfg.chSize+d)); } },
+  { k:'chLine', name:'照準の線', show:()=>cfg.chLine?'表示':'非表示', adj:()=>{ cfg.chLine ^= 1; } },
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
   { k:'ptrSpd', name:'🎮 カーソルの速さ', show:()=>cfg.ptrSpd, adj:d=>{ cfg.ptrSpd = Math.max(1, Math.min(10, cfg.ptrSpd+d)); } },
   { k:'padType', name:'🎮 ボタン表示', show:()=>PADS[cfg.padType].name, adj:d=>{ const ks = Object.keys(PADS); cfg.padType = ks[(ks.indexOf(cfg.padType)+(d<0?ks.length-1:1))%ks.length]; } },
