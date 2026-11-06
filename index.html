@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.2<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -153,7 +153,7 @@ const CRAWL = 60;
 // 段階7：ダッシュ・回避・乗り越え（数値は仮）
 const DASH_MUL = 1.4, DASH_B = .06;          // ダッシュの速度倍率／ダッシュ中に増えるぶれ
 const DODGE_SPD = 600, DODGE_T = .25, DODGE_CD = 3; // 回避の速さ・時間（＝無敵時間）・クールタイム
-// ===== ヒーロー（仕様6）。基本ステータスは共通、能力だけが違う。段階8.1はパッシブのみ動く =====
+// ===== ヒーロー（仕様6）。基本ステータスは共通、能力だけが違う。段階8.2でキューまで動く =====
 const HEROES = {
   raven: { name:'レイヴン', role:'索敵・探索', col:'#7c8cff',
     p:['気配察知','敵の足音・銃声を25%遠くから察知し、方向を表示（壁越しも）'], q:['索敵パルス','半径300の敵を3秒探知',20], u:['ゴーストアイ','10秒間 広範囲の敵を探知',120] },
@@ -174,6 +174,15 @@ const AEGIS_CUT = 0.9;                 // 装甲強化：シールド100のと�
 const HEAR_SHOT = 1100, HEAR_STEP = 330, RAVEN_HEAR = 1.25; // 仮：銃声・足音が聞こえる距離。レイヴンは1.25倍
 const snOf = p => p.sn !== undefined && !isHost ? p.sn : Date.now()-(p.lastShot||0) < 250 ? 2 : (p.mvAmt||0) > 0.5 && !p.down ? 1 : 0; // 銃声2・足音1
 const bzOf = p => !isHost ? p.bz : (p.bzUntil||0) > Date.now() ? 1 : 0;
+// キュー（段階8.2）。距離は仕様の約0.6倍。仮の値
+const PULSE_R = 300, PULSE_T = 3000;                 // レイヴン：索敵パルス
+const NADE_THROW = 300, NADE_FLY = 450, NADE_FUSE = 600, FLASH_R = 108, BLIND_T = 2000, FLASH_FOV = Math.cos(80*Math.PI/180); // ブレイズ：フラッシュグレネード（投げる距離300・着地0.45秒・爆発まで0.6秒は仮）
+const BOOST_DIST = 210, BOOST_T = 0.7;               // ソニア：ブーストダッシュ（走る速さに上乗せ）
+const FIELD_R = 108, FIELD_T = 6000, FIELD_HP = 5, FIELD_MAX = 30; // メディ：ヒールフィールド
+const BARRIER_W = 132, BARRIER_HP = 500, BARRIER_T = 6000, BARRIER_D = 36; // アイギス：バリア展開
+const qcdOf = p => !p ? 0 : !isHost ? (p.qcd||0) : Math.max(0, ((p.qCd||0) - Date.now())/1000);
+const spotted = (q, t) => isHost ? !!(q.spot && q.spot[t] > Date.now()) : !!(q.spt && q.spt.includes(t));
+const blindOf = p => !p ? 0 : isHost ? Math.max(0, (p.blindUntil||0) - Date.now()) : (p.bdr||0);
 const dodgeCd = p => p && p.hero==='sonia' ? SONIA_DCD : DODGE_CD;
 const VAULT_EXT = .35;                      // 乗り越え：障害物の上にいる間は最大この秒数まで回避を延ばす                    // ダウン中の這う速度
 const DOWN_HP = 100;                 // ダウン中の体力
@@ -510,7 +519,8 @@ function touchBtns(){ const b = actBtn(), me = state.players.find(p=>p.id===myId
            { k:'mm', x:b.x-88, y:b.y-40, r:28, label:me&&me.mm?'通常':'範囲', show:!!(w && w.magic) },
            { k:'heal', x:b.x, y:b.y-146, r:28, label:'回復' },
            { k:'dg', x:b.x-88, y:b.y+112, r:28, label:'回避' },
-           { k:'bag', x:b.x-152, y:b.y+44, r:28, label:'持ち物' } ].filter(x=>x.show!==false); }
+           { k:'bag', x:b.x-152, y:b.y+44, r:28, label:'持ち物' },
+           { k:'qu', x:b.x-152, y:b.y-24, r:28, label: qcdOf(me) > 0 ? Math.ceil(qcdOf(me))+'' : 'キュー' } ].filter(x=>x.show!==false); }
 // アイテムリング：回復ボタンを長押しで出る。方向で選び、離すと使う（短く押す＝今までどおり自動で回復）
 const RING = ['s1','m1','s2','m2']; // 上・右・下・左
 const ring = { down:0, open:false, sel:-1 };
@@ -520,9 +530,9 @@ function ringAim(x, y){ if (!ring.open || Math.hypot(x, y) < 0.35) return; const
   const k = ((Math.round(a/(Math.PI/2)) + 5) % 4); if (k !== ring.sel) { ring.sel = k; sfx('ui'); } }
 function ringRelease(){ if (!ring.down) return; const was = ring.open, sel = ring.sel; ring.down = 0; ring.open = false; ring.sel = -1;
   if (!was) { sendCmd({ c:'heal' }); return; } if (sel >= 0) sendCmd({ c:'heal', code:RING[sel] }); }
-let keyDodge = false; const ctr = { sw:0, rl:0, mm:0, dg:0 }; // 押した回数（ホストは増えた分だけ処理する）
+let keyDodge = false; const ctr = { sw:0, rl:0, mm:0, dg:0, qu:0 }; // 押した回数（ホストは増えた分だけ処理する）
 addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
-  if (e.code==='Space' && state.phase==='match' && !(e.target && e.target.tagName==='INPUT')) { e.preventDefault(); keyDodge = true; } if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
+  if (e.code==='Space' && state.phase==='match' && !(e.target && e.target.tagName==='INPUT')) { e.preventDefault(); keyDodge = true; } if (e.code==='KeyQ') ctr.sw++; if (e.code==='KeyF' && state.phase==='match') ctr.qu++; if (e.code==='KeyR') ctr.rl++; if (e.code==='KeyV') ctr.mm++;
   if (e.code==='KeyH') ringPress(); if ((e.code==='KeyI' || e.code==='Tab') && state.phase==='match') { e.preventDefault(); toggleBag(); }
   if (e.code==='KeyM') toggleMap(); if (e.code==='Escape') { if (setOpen) closeSettings(); else if (mapOpen) toggleMap(); else if (bagOpen) toggleBag(); else openSettings(); } });
 addEventListener('keyup', e => { keys[e.code]=false; if (e.code==='KeyH') ringRelease(); });
@@ -570,7 +580,7 @@ function readInput(me){
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
     if (!ui) { if (bp(K.act) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || bp(K.act); else if (be(K.act)) ctr.rl++;
       if (be(K.heal)) ringPress(); if (!bp(K.heal) && gpPrev[K.heal] && ring.down) ringRelease();
-      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; if (be(K.dodge)) dodge = true; if (bp(K.dash)) dash = true; }
+      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; if (be(K.dodge)) dodge = true; if (be(K.cue)) ctr.qu++; if (bp(K.dash)) dash = true; }
     gpPrev = gp.buttons.map(b=>b.pressed); }
   if (setOpen) { mx = my = 0; fire = false; }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; if (Math.hypot(touch.move.x-touch.move.ox, touch.move.y-touch.move.oy) > 95) dash = true; } // スマホ：スティックを大きく倒すとダッシュ
@@ -612,13 +622,20 @@ function localStep(dt){
   if (inp.dodge && alive(me) && !me.down && !local.dg && nowMs >= (local.dgCd||0)) { // 回避：移動入力の方向、なければ向いている方向
     const m = Math.hypot(inp.mx, inp.my), dx = m > 0.2 ? inp.mx/m : inp.fx, dy = m > 0.2 ? inp.my/m : inp.fy;
     local.dg = { t:DODGE_T, ext:0, x:dx, y:dy }; local.dgCd = nowMs + dodgeCd(me)*1000; ctr.dg++; sfx('dodge'); }
+  if (local._qu === undefined) local._qu = ctr.qu;
+  if (ctr.qu !== local._qu) { local._qu = ctr.qu; // キューを押した（効果はホストが決める。ソニアの移動だけ自分の端末で）
+    if (me.hero==='sonia' && alive(me) && !local.dg && !local.bd && qcdOf(me) <= 0) { const m = Math.hypot(inp.mx, inp.my);
+      local.bd = { t:BOOST_T, x: m > 0.2 ? inp.mx/m : inp.fx, y: m > 0.2 ? inp.my/m : inp.fy }; sfx('dodge'); } }
+  if (local.bd && (!alive(me) || local.dg)) local.bd = null;
   if (local.dg && (me.down || me.out)) local.dg = null;
   if (local.dg) { const g = local.dg, ox = local.x, oy = local.y; local.x += g.x*DODGE_SPD*dt; local.y += g.y*DODGE_SPD*dt; g.t -= dt;
     if (g.t <= 0) g.ext += dt; const cont = g.t > 0 || (onLow(local) && g.ext < VAULT_EXT); // 低い障害物の上なら越えきるまで続ける
     pushOut(local, ox, oy, cont); if (!cont) local.dg = null; }
+  else if (local.bd) { const g = local.bd, ox = local.x, oy = local.y, sp = SPEED*DASH_MUL + BOOST_DIST/BOOST_T; // ブーストダッシュ：壁は通れない
+    local.x += g.x*sp*dt; local.y += g.y*sp*dt; pushOut(local, ox, oy); if ((g.t -= dt) <= 0) local.bd = null; }
   else if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire)*(inp.dash && !me.down ? DASH_MUL : 1), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
   local.ax = inp.ax; local.ay = inp.ay; local.fx = inp.fx; local.fy = inp.fy; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
-  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm; local.dgc = ctr.dg; local.dash = !!inp.dash; if (local.dg) local.fire = false;
+  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm; local.dgc = ctr.dg; local.quc = ctr.qu; local.dash = !!inp.dash; if (local.dg || local.bd) local.fire = false;
   return local;
 }
 
@@ -662,9 +679,9 @@ function hostStartMatch(){
   for (let t=0;t<nTeams;t++){ const a=a0+t/nTeams*Math.PI*2; const rr = 1400 + nTeams*60; base.push(freeSpot(8000+Math.cos(a)*rr, 7550+Math.sin(a)*rr, 300)); } // 仮：旧市街のまわりに出現（チームが多いほど広く）
   state.players.forEach(p => { const b=base[teamOf(p.slot)]||base[0], s=freeSpot(b.x, b.y, SPAWN_ALLY_R);
     Object.assign(p, { skin:p.skin||'default', x:s.x, y:s.y, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, rv:0, dhp:0, dsh:0, wp:null, bwp:null,
-      kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0 }); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
+      kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0, qCd:0, spot:null, blindUntil:0, bdUntil:0, bzUntil:0, dgCd:0 }); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
   for (const k in engaged) delete engaged[k];
-  state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ev = []; state.drops = []; spawnLoot();
+  state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ab = { nades:[], fields:[], walls:[] }; state.ev = []; state.drops = []; spawnLoot();
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
   broadcast(); enterGame();
 }
@@ -677,6 +694,39 @@ function assignHeroes(){
     for (const p of rest) { const free = HIDS.filter(h=>!used.has(h)), pool = free.length ? free : HIDS;
       p.hero = pool[Math.random()*pool.length|0]; used.add(p.hero); } }
 }
+// ===== キュー（ホストが処理） =====
+const segX = (ax,ay,bx,by,cx,cy,dx,dy) => { const d = (bx-ax)*(dy-cy)-(by-ay)*(dx-cx); if (!d) return false;
+  const t = ((cx-ax)*(dy-cy)-(cy-ay)*(dx-cx))/d, u = ((cx-ax)*(by-ay)-(cy-ay)*(bx-ax))/d; return t>=0 && t<=1 && u>=0 && u<=1; };
+function cueStep(p, inp, now){
+  let go = !!inp.doQ;
+  if (inp.quc !== undefined) { if (p._quc === undefined) p._quc = inp.quc; else if (inp.quc !== p._quc) { p._quc = inp.quc; go = true; } }
+  const h = HEROES[p.hero]; if (!go || !h || p.down || p.out || now < (p.qCd||0)) return;
+  p.qCd = now + h.q[2]*1000; const tm = teamOf(p.slot), A = state.ab;
+  if (p.hero==='raven') { pushEv({ k:'pulse', x:Math.round(p.x), y:Math.round(p.y), r:PULSE_R, tm }); // 壁越しでも探知。相手には知らせない
+    for (const q of state.players) if (!q.out && teamOf(q.slot)!==tm && Math.hypot(q.x-p.x, q.y-p.y) < PULSE_R+R) { q.spot = q.spot || {}; q.spot[tm] = now + PULSE_T; } }
+  else if (p.hero==='blaze') { let x = p.x, y = p.y; const n = NADE_THROW/10; // 壁に当たったら、その手前に落ちる
+    for (let i=1; i<=n; i++) { const nx = p.x+p.ax*i*10, ny = p.y+p.ay*i*10; if (inObs(nx, ny) || nx<0||ny<0||nx>MAP||ny>MAP) break; x = nx; y = ny; }
+    A.nades.push({ x0:Math.round(p.x), y0:Math.round(p.y), x:Math.round(x), y:Math.round(y), t0:now, land:now+NADE_FLY, at:now+NADE_FLY+NADE_FUSE, tm }); }
+  else if (p.hero==='sonia') p.bdUntil = now + BOOST_T*1000; // 移動は本人の端末（BOTの使い方は段階10で）
+  else if (p.hero==='medi') A.fields.push({ x:Math.round(p.x), y:Math.round(p.y), r:FIELD_R, until:now+FIELD_T, tm, acc:0, got:{} });
+  else if (p.hero==='aegis') { const a = Math.hypot(p.ax, p.ay)||1, ux = p.ax/a, uy = p.ay/a, cx = p.x+ux*BARRIER_D, cy = p.y+uy*BARRIER_D, hw = BARRIER_W/2;
+    A.walls.push({ x1:Math.round(cx-uy*hw), y1:Math.round(cy+ux*hw), x2:Math.round(cx+uy*hw), y2:Math.round(cy-ux*hw), hp:BARRIER_HP, until:now+BARRIER_T }); }
+  sfx('ui', p.x, p.y);
+}
+function abilTick(dt, now){ const A = state.ab; if (!A) return;
+  for (const g of A.nades) if (now >= g.at) { g.done = true; pushEv({ k:'flash', x:g.x, y:g.y, r:FLASH_R });
+    for (const q of state.players) { if (q.out || q.down || teamOf(q.slot)===g.tm) continue; const dx = g.x-q.x, dy = g.y-q.y, d = Math.hypot(dx, dy);
+      if (d > FLASH_R+R) continue; const f = Math.hypot(q.fx??q.ax, q.fy??q.ay)||1, dot = d < R*2 ? 1 : (dx*(q.fx??q.ax) + dy*(q.fy??q.ay))/(d*f);
+      if (dot >= FLASH_FOV && losClear(q, g)) q.blindUntil = now + BLIND_T; } } // 爆発に背を向けていれば効かない
+  A.nades = A.nades.filter(g=>!g.done);
+  for (const f of A.fields) { if ((f.acc += dt) < 1) continue; f.acc -= 1; // 1秒ごとに5回復（1人30まで）。シールド・ダウン中は対象外
+    for (const q of state.players) { if (!alive(q) || teamOf(q.slot)!==f.tm || q.hp >= 100 || Math.hypot(q.x-f.x, q.y-f.y) > f.r+R) continue;
+      const k = Math.min(FIELD_HP, FIELD_MAX-(f.got[q.id]||0), 100-q.hp); if (k > 0) { q.hp += k; f.got[q.id] = (f.got[q.id]||0)+k; } } }
+  A.fields = A.fields.filter(f=>now < f.until);
+  A.walls = A.walls.filter(w=>now < w.until && w.hp > 0);
+}
+const packAb = () => { const A = state.ab || { nades:[], fields:[], walls:[] };
+  return { n:A.nades.map(g=>[g.x0,g.y0,g.x,g.y,g.t0,g.land,g.at]), f:A.fields.map(f=>[f.x,f.y,f.r,f.until,f.tm]), w:A.walls.map(w=>[w.x1,w.y1,w.x2,w.y2,Math.max(0,w.hp),w.until]) }; };
 function hostBackToLobby(){
   state.players = state.players.filter(p=>!p.bot);
   state.phase='lobby'; state.bullets=[]; state.loot=null; broadcast(); showLobby();
@@ -693,8 +743,9 @@ function hostTick(dt){
     // 回避（人間は押した回数で受け取る）：0.25秒無敵・攻撃できない・回復は取り消し。リロードは続く
     if (inp.dgc !== undefined) { if (p._dgc === undefined) p._dgc = inp.dgc;
       else if (inp.dgc !== p._dgc) { p._dgc = inp.dgc; if (!p.down && now >= (p.dgCd||0)) { p.dgUntil = now + DODGE_T*1000; p.dgCd = now + dodgeCd(p)*1000 - 100; p.heal = null; } } }
+    cueStep(p, inp, now);
     const dodging = now < (p.dgUntil||0);
-    if (dodging && inp.fire) inp = Object.assign({}, inp, { fire:false });
+    if ((dodging || now < (p.bdUntil||0) || (p.bot && now < (p.blindUntil||0))) && inp.fire) inp = Object.assign({}, inp, { fire:false }); // 回避中・ブーストダッシュ中は撃てない。目くらましのBOTも撃たない
     p.dash = !!inp.dash && !p.down;
     const sp = p.down ? CRAWL : SPEED*moveMul(p, inp.fire && !p.down);
     const ox = p.x, oy = p.y;
@@ -725,6 +776,8 @@ function hostTick(dt){
   for (const b of state.bullets) {
     const st = Math.hypot(b.vx,b.vy)*dt; b.x += b.vx*dt; b.y += b.vy*dt; b.d += st;
     if (b.d >= b.max || inObs(b.x,b.y) || b.x<0||b.y<0||b.x>MAP||b.y>MAP) { b.life=0; continue; }
+    const wl = state.ab.walls.find(w => w.hp > 0 && segX(b.x-b.vx*dt, b.y-b.vy*dt, b.x, b.y, w.x1, w.y1, w.x2, w.y2)); // バリア：敵味方どちらの弾も止める
+    if (wl) { b.life=0; wl.hp -= WEAPONS[WIDS[b.w]].dmg; pushEv({ k:'bhit', x:Math.round(b.x), y:Math.round(b.y) }); continue; }
     for (const p of state.players) { if (p.out || teamOf(p.slot)===b.tm) continue; // 味方の弾はすり抜ける
       const hd = Math.hypot(p.x-b.x, p.y-b.y);
       if (hd < R) { b.life=0; const w = WEAPONS[WIDS[b.w]];
@@ -737,6 +790,7 @@ function hostTick(dt){
     for (const q of state.players) if (!q.out && teamOf(q.slot)!==c.tm && Math.hypot(q.x-c.x,q.y-c.y) < c.r+R) damage(q, w.dmg, { o:c.o, vx:q.x-c.x||1, vy:q.y-c.y }, now);
     if (o && o.cast===c) o.cast = null; }
   state.casts = state.casts.filter(c=>!c.done);
+  abilTick(dt, now);
   lootTick(dt, now, el, zn);
   state.ev = state.ev.filter(e=>now-e.at < 700);
   state.bullets = state.bullets.filter(b=>b.life>0);
@@ -1074,11 +1128,11 @@ function broadcast(){
   const now = Date.now();
   const tp = state.tplace || {};
   const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
-    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, hero:p.hero, h1:p.h1, bz:bzOf(p), sn:snOf(p), x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
+    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, hero:p.hero, h1:p.h1, bz:bzOf(p), sn:snOf(p), qcd:+qcdOf(p).toFixed(1), bdr:blindOf(p), spt:p.spot ? Object.keys(p.spot).filter(t=>p.spot[t]>now).map(Number) : 0, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, dg:(p.dgUntil||0)>now?1:0, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
       wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k,b.id,b.w]),
-    ev: state.ev||[], casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
+    ev: state.ev||[], abp: state.phase==='match' ? packAb() : null, casts: (state.casts||[]).map(c=>[c.x,c.y,c.r,Math.max(0,c.at-now)]) };
   if (state.loot && state.loot.v !== sentLootV && now - lootSentAt > 200) { sentLootV = state.loot.v; lootSentAt = now; s.loot = packLoot(state.loot); } // 物資は変わったときだけ送る
   const pkt = { t:'state', s, now };
   for (const id in conns) if (conns[id].open) conns[id].send(pkt);
@@ -1162,7 +1216,7 @@ function frame(t){
   const me = state.phase==='lobby' ? null : localStep(dt);
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
-      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, dgc:me.dgc, dash:me.dash, vw:myView().w, vh:myView().h }); }
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, dgc:me.dgc, quc:me.quc, dash:me.dash, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (state.phase!=='lobby') draw(me);
@@ -1482,7 +1536,7 @@ function drawLabel(v){
 // ===== 攻撃の演出（斬撃・爆発・範囲の予告・ダメージ数値） =====
 const fxs = []; let lastEv = 0;
 function takeEvents(ev){ for (const e of ev||[]) { if (e.id <= lastEv) continue; lastEv = e.id;
-    if (e.k==='slash') sfx('slash', e.x, e.y); else if (e.k==='boom') sfx('boom', e.x, e.y); else if (e.k==='chest') { sfx('chest', e.x, e.y); continue; }
+    if (e.k==='slash') sfx('slash', e.x, e.y); else if (e.k==='boom' || e.k==='flash') sfx('boom', e.x, e.y); else if (e.k==='chest') { sfx('chest', e.x, e.y); continue; }
     if (e.k==='hit' && e.o!==myId) continue; // ダメージ数値は撃った人にだけ
     if (e.k==='hit') sfx('hitm');
     fxs.push(Object.assign({}, e, { t0:performance.now(), jx:(Math.random()-.5)*24 })); } }
@@ -1492,12 +1546,26 @@ function drawFx(){
     ctx.fillStyle='rgba(190,120,255,.18)'; ctx.strokeStyle='rgba(210,150,255,.9)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,Math.PI*2); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(c.x,c.y,c.r*(1-left),0,Math.PI*2); ctx.stroke(); }
+  const A = isHost ? packAb() : state.abp, hn = Date.now()+clockOffset, my = (state.players.find(p=>p.id===myId)||{}).slot;
+  if (A) { for (const f of A.f) { const a = Math.min(1, (f[3]-hn)/600); ctx.save(); ctx.globalAlpha = Math.max(0, a); // ヒールフィールド
+      ctx.fillStyle = 'rgba(90,255,150,.16)'; ctx.strokeStyle = 'rgba(120,255,170,.85)'; ctx.lineWidth = 2; ctx.setLineDash([10,6]); ctx.lineDashOffset = -n/40;
+      ctx.beginPath(); ctx.arc(f[0], f[1], f[2], 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle='rgba(160,255,190,.8)'; ctx.font='bold 16px sans-serif'; ctx.textAlign='center'; ctx.fillText('＋', f[0], f[1]-4-(n/20%20)); ctx.restore(); }
+    for (const w of A.w) { const a = Math.max(.25, w[4]/BARRIER_HP); ctx.save(); // バリア：体の高さに立つ壁
+      ctx.strokeStyle = `rgba(110,200,255,${.5+.4*a})`; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(w[0], w[1]-BODY_H); ctx.lineTo(w[2], w[3]-BODY_H); ctx.stroke();
+      ctx.fillStyle = `rgba(110,200,255,${.12+.15*a})`; ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.lineTo(w[2], w[3]-BODY_H-14); ctx.lineTo(w[0], w[1]-BODY_H-14); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    for (const g of A.n) { const t = Math.min(1, (hn-g[4])/Math.max(1, g[5]-g[4])), x = g[0]+(g[2]-g[0])*t, y = g[1]+(g[3]-g[1])*t, hgt = BODY_H + Math.sin(t*Math.PI)*40; // グレネード
+      ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y, 4, 2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = t >= 1 && (n/120|0)%2 ? '#fff' : '#ff8a3d'; ctx.beginPath(); ctx.arc(x, t < 1 ? y-hgt : y-3, 4, 0, Math.PI*2); ctx.fill(); } }
   for (let i=fxs.length-1; i>=0; i--) { const f = fxs[i], age = (n-f.t0)/1000;
     if (age > 0.9) { fxs.splice(i,1); continue; }
     if (f.k==='slash' && age < 0.18) { ctx.save(); ctx.globalAlpha = 1-age/0.18; ctx.fillStyle='rgba(255,255,255,.55)';
       ctx.beginPath(); ctx.moveTo(f.x, f.y-BODY_H); ctx.arc(f.x, f.y-BODY_H, f.r+R, f.a-Math.PI/4, f.a+Math.PI/4); ctx.closePath(); ctx.fill(); ctx.restore(); }
     else if (f.k==='boom' && age < 0.35) { ctx.save(); ctx.globalAlpha = 1-age/0.35; ctx.fillStyle='rgba(200,130,255,.5)';
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r*(0.6+age), 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+    else if (f.k==='pulse' && age < 0.8 && my !== undefined && f.tm===teamOf(my)) { ctx.save(); ctx.globalAlpha = 1-age/0.8; ctx.strokeStyle='#9fb0ff'; ctx.lineWidth=3; // 索敵パルス（味方にだけ見える）
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r*Math.min(1, age/0.4), 0, Math.PI*2); ctx.stroke(); ctx.restore(); }
+    else if (f.k==='flash' && age < 0.5) { ctx.save(); ctx.globalAlpha = 1-age/0.5; ctx.fillStyle='rgba(255,255,230,.7)'; ctx.beginPath(); ctx.arc(f.x, f.y-BODY_H, f.r*(0.5+age), 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+    else if (f.k==='bhit' && age < 0.2) { ctx.fillStyle='rgba(170,230,255,.9)'; ctx.beginPath(); ctx.arc(f.x, f.y-BODY_H, 6*(1-age/0.2)+2, 0, Math.PI*2); ctx.fill(); }
     else if (f.k==='hit' && cfg.dmgNum) { ctx.save(); ctx.globalAlpha = Math.min(1, (0.9-age)*3); ctx.textAlign='center'; ctx.font='bold 16px sans-serif';
       ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.7)'; const x = f.x+f.jx, y = f.y-SPRITE_H*CHAR_SCALE-14-age*36;
       ctx.strokeText(f.d, x, y); ctx.fillStyle = f.c ? '#ffd23a' : '#fff'; ctx.fillText(f.d, x, y); ctx.restore(); } }
@@ -1508,7 +1576,10 @@ function drawWeaponHud(mp, bx, by){
     ctx.fillStyle='#000a'; ctx.fillRect(bx-4, by-82, 92, 18); ctx.fillStyle = left ? '#9aa4c0' : '#8fd'; ctx.fillText(left ? `回避 ${left.toFixed(1)}` : '回避 OK', bx+2, by-68);
     const h = HEROES[mp.hero]; if (h) { const on = (mp.hero==='blaze' && bzOf(mp)) || (mp.hero==='aegis' && mp.sh>=100); // ヒーローとパッシブ
       ctx.fillStyle='#000a'; ctx.fillRect(bx+92, by-82, 132, 18); ctx.fillStyle=h.col; ctx.fillText(h.name, bx+98, by-68);
-      ctx.fillStyle = on ? '#ffe28a' : '#9aa4c0'; ctx.font='11px sans-serif'; ctx.fillText(h.p[0] + (on ? ' 発動中' : ''), bx+98+ctx.measureText(h.name).width*1.1+6, by-68); } }
+      ctx.fillStyle = on ? '#ffe28a' : '#9aa4c0'; ctx.font='11px sans-serif'; ctx.fillText(h.p[0] + (on ? ' 発動中' : ''), bx+98+ctx.measureText(h.name).width*1.1+6, by-68);
+      const qc = qcdOf(mp); ctx.fillStyle='#000a'; ctx.fillRect(bx-4, by-104, 228, 18); ctx.font='bold 12px sans-serif'; // キュー
+      ctx.fillStyle = qc > 0 ? '#9aa4c0' : '#8fd'; ctx.fillText(`キュー［${bn(cfg.bind.cue)}／F］${h.q[0]}　${qc > 0 ? qc.toFixed(1) : 'OK'}`, bx+2, by-90);
+      if (qc > 0) { ctx.fillStyle='#8fd4'; ctx.fillRect(bx-4, by-88, 228*(1-qc/h.q[2]), 2); } } }
   const w = wOf(mp), cur = mp.wp[4], mag = mp.wp[cur*2+1], ow = wAt(mp, cur^1), other = { name: ow ? ow.name : 'なし' };
   if (!w) { const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left'; ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif';
     ctx.fillText('武器なし', bx+4, y+12); ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(ow ? `もう1つ：${ow.name}（切替）` : 'チェストを開けて武器を拾おう', bx+4, y+36); return; }
@@ -1595,6 +1666,9 @@ function draw(me){
     return occ.some(o => (o.ht!==undefined && o.k ? o.y+o.h > v.y : true) && x1>o.ib[0] && x0<o.ib[0]+o.ib[2] && y1>o.ib[1] && y0<o.ib[1]+o.ib[3]); };
   for (const v of vis) { v.hid = hidden(v); if (v.hid) { // 裏にいる人はシルエットで見せる（味方は緑、敵は赤）
       ctx.save(); ctx.globalAlpha=0.5; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, (v.mine || v.ally) ? true : '#ff8a8a', v.fx, v.fy); ctx.restore(); } }
+  // 索敵で見つけた敵：赤い輪（壁越しでも）
+  if (mp) for (const v of vis) if (!v.ally && spotted(v.p, myTeam)) { ctx.save(); ctx.strokeStyle='rgba(255,80,80,.95)'; ctx.lineWidth=3; ctx.beginPath(); ctx.ellipse(v.x, v.y, 20, 9, 0, 0, Math.PI*2); ctx.stroke();
+    if (v.hid) { ctx.globalAlpha=.85; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, '#ff5050', v.fx, v.fy); } ctx.restore(); }
   // 弾（体の高さ）
   for (const b of state.bullets){ ctx.fillStyle = b.k===1 ? '#d9a2ff' : '#ffe28a'; ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,b.k===1?4:2.5,0,Math.PI*2); ctx.fill(); }
   drawFx();
@@ -1635,6 +1709,7 @@ function draw(me){
     ctx.fillStyle = lit ? 'rgba(255,226,138,.5)' : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
     ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(b.label, b.x, b.y+4); }
   if (mp && alive(mp)) drawWeaponHud(mp, 16+SAFE.l, H-50-SAFE.b);
+  { const bl = blindOf(mp); if (bl > 0) { ctx.fillStyle = `rgba(255,255,245,${Math.min(.97, bl/700)})`; ctx.fillRect(0, 0, W, H); } } // 目くらまし
   if (mp) { const bx=16+SAFE.l, by=H-50-SAFE.b; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40); ctx.textAlign='left'; ctx.font='bold 11px sans-serif';
     if (mp.down) { ctx.fillStyle='#e55'; ctx.fillRect(bx,by,220*mp.dhp/DOWN_HP,12); ctx.fillStyle='#6cf'; ctx.fillRect(bx,by+18,220*mp.dsh/DOWN_SHIELD,12);
       ctx.fillStyle='#fff'; ctx.fillText(`ダウン体力 ${mp.dhp}`, bx+4, by+10); ctx.fillText(`ダウンシールド ${mp.dsh}（照準の向き）`, bx+4, by+28);
@@ -1756,6 +1831,8 @@ function drawMini(zn, pos, mp, SW){
     if (zn.next) { ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.setLineDash([3,2]); ctx.beginPath(); ctx.arc(x0+zn.next.x*k, y0+zn.next.y*k, zn.next.r*k, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } }
   if (mp) for (const p of state.players) { if (p.out || p.id===myId || teamOf(p.slot)!==teamOf(mp.slot)) continue;
     ctx.fillStyle='#5f8'; ctx.beginPath(); ctx.arc(x0+(isHost?p.x:p.dx)*k, y0+(isHost?p.y:p.dy)*k, 2.5, 0, Math.PI*2); ctx.fill(); }
+  if (mp) for (const p of state.players) if (!p.out && teamOf(p.slot)!==teamOf(mp.slot) && spotted(p, teamOf(mp.slot))) { ctx.fillStyle='#ff4a4a'; ctx.strokeStyle='#fff'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(x0+(isHost?p.x:p.dx)*k, y0+(isHost?p.y:p.dy)*k, 3.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); } // 探知した敵
   if (state.loot) for (const c of state.loot.chests) if (c.sp && !c.op) { ctx.fillStyle='#4aa3ff'; ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.fillRect(x0+c.x*k-3, y0+c.y*k-3, 6, 6); ctx.strokeRect(x0+c.x*k-3, y0+c.y*k-3, 6, 6); }
   if (pos) { ctx.fillStyle='#fff'; ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x0+pos.x*k, y0+pos.y*k, 3.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
   ctx.restore();
@@ -1855,14 +1932,14 @@ function uiPad(edge){
 }
 
 // ===== 設定（スタート長押し・Esc・持ち物ボタン長押し） =====
-const BIND0 = { fire:7, fire2:5, act:2, sw:3, mm:4, heal:12, bag:9, map:8, dodge:1, dash:6 };
+const BIND0 = { fire:7, fire2:11, act:2, sw:3, mm:4, heal:12, bag:9, map:8, dodge:1, dash:6, cue:5 }; // キューはRB（撃つ（サブ）はRSへ移動）
 const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビュー','メニュー','LS','RS'] },
   ps:{ name:'PlayStation', b:['✕','○','□','△','L1','R1','L2','R2','クリエイト','オプション','L3','R3'] },
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
 const BTN_REST = ['十字↑','十字↓','十字←','十字→','ホーム'];
 const bn = i => ((PADS[cfg.padType]||PADS.xbox).b.concat(BTN_REST))[i] || ('ボタン'+i); // いまのボタン表示での名前
 const cfg = { ptrSpd:5, bgm:40, vol:70, assist:1, dmgNum:1, padType:'xbox', bind:{...BIND0} };
-try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){} cfg.bind = { ...BIND0, ...(cfg.bind||{}) }; if (!PADS[cfg.padType]) cfg.padType = 'xbox';
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('hbr_cfg')||'{}')); } catch(e){} cfg.bind = { ...BIND0, ...(cfg.bind||{}) }; if (cfg.bind.cue===cfg.bind.fire2) cfg.bind.fire2 = 11; if (!PADS[cfg.padType]) cfg.padType = 'xbox';
 const saveCfg = () => { try { localStorage.setItem('hbr_cfg', JSON.stringify(cfg)); } catch(e){} };
 const SETS = [
   { k:'bgm', name:'BGMの音量', show:()=>cfg.bgm+'%', adj:d=>{ cfg.bgm = Math.max(0, Math.min(100, cfg.bgm+d*10)); } },
@@ -1871,7 +1948,7 @@ const SETS = [
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
   { k:'ptrSpd', name:'🎮 カーソルの速さ', show:()=>cfg.ptrSpd, adj:d=>{ cfg.ptrSpd = Math.max(1, Math.min(10, cfg.ptrSpd+d)); } },
   { k:'padType', name:'🎮 ボタン表示', show:()=>PADS[cfg.padType].name, adj:d=>{ const ks = Object.keys(PADS); cfg.padType = ks[(ks.indexOf(cfg.padType)+(d<0?ks.length-1:1))%ks.length]; } },
-  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['dodge','回避・乗り越え'],['dash','ダッシュ（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
+  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['dodge','回避・乗り越え'],['cue','キュー（戦術スキル）'],['dash','ダッシュ（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
     .map(([b,name]) => ({ k:'b_'+b, bind:b, name:'🎮 '+name, show:()=>bindWait===b ? '押して…' : bn(cfg.bind[b]), adj:()=>{ bindWait = b; bindReady = false; } })),
   { k:'bReset', name:'🎮 ボタンを初期に戻す', show:()=>'戻す', adj:()=>{ cfg.bind = { ...BIND0 }; } },
 ];
@@ -1911,6 +1988,8 @@ function drawBigMap(zn, pos, mp){
   if (zn) { ctx.beginPath(); ctx.rect(x0, y0, S, S); if (!zn.gone) ctx.arc(x0+zn.x*k, y0+zn.y*k, zn.r*k, 0, Math.PI*2, true); ctx.fillStyle='rgba(60,110,255,.3)'; ctx.fill();
     if (!zn.gone) { ctx.strokeStyle='#8fb8ff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x0+zn.x*k, y0+zn.y*k, zn.r*k, 0, Math.PI*2); ctx.stroke(); }
     if (zn.next) { ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.arc(x0+zn.next.x*k, y0+zn.next.y*k, zn.next.r*k, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } }
+  if (mp) for (const p of state.players) if (!p.out && teamOf(p.slot)!==teamOf(mp.slot) && spotted(p, teamOf(mp.slot))) { ctx.fillStyle='#ff4a4a'; ctx.strokeStyle='#fff'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(x0+(isHost?p.x:p.dx)*k, y0+(isHost?p.y:p.dy)*k, 3.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); } // 探知した敵
   if (state.loot) for (const c of state.loot.chests) if (c.sp && !c.op) { ctx.fillStyle='#4aa3ff'; ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.fillRect(x0+c.x*k-5, y0+c.y*k-5, 10, 10); ctx.strokeRect(x0+c.x*k-5, y0+c.y*k-5, 10, 10); }
   if (mp) for (const p of state.players) { if (p.out || p.id===myId || teamOf(p.slot)!==teamOf(mp.slot)) continue;
     ctx.fillStyle='#5f8'; ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x0+(isHost?p.x:p.dx)*k, y0+(isHost?p.y:p.dy)*k, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
