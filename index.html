@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.6<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.7<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -563,7 +563,7 @@ function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
 function tMove(e){ for (const t of e.changedTouches) { if (touch.ring && touch.ring.id===t.identifier) ringAim((t.clientX-touch.ring.ox)/60, (t.clientY-touch.ring.oy)/60); } for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
 function tEnd(e){ for (const t of e.changedTouches) { if (touch.ring && touch.ring.id===t.identifier) { touch.ring = null; ringRelease(); } for (const k of ['move','aim','act']) if (touch[k]&&touch[k].id===t.identifier) touch[k]=null;
     if (touch.bag && touch.bag.id===t.identifier) { touch.bag = null; clearTimeout(holdTimer); toggleBag(); } } e.preventDefault(); } // 持ち物ボタン：短く押す＝持ち物／長押し＝設定
-let holdTimer = 0; const LONG_MS = 500;
+let holdTimer = 0; const LONG_MS = 500, ULT_GAP = 200, ULT_HOLD = 500;
 const stickOf = t => { if(!t) return {x:0,y:0}; let x=(t.x-t.ox)/60, y=(t.y-t.oy)/60; const m=Math.hypot(x,y); if(m>1){x/=m;y/=m;} return {x,y}; };
 const dz = v => Math.abs(v) < 0.2 ? 0 : v;
 
@@ -589,11 +589,17 @@ function readInput(me){
     ringHold(); if (ring.open) { ringAim(rx||lx, ry||ly); rx = ry = 0; }
     ptrUpdate(ui && !mapOpen ? lx : 0, ui && !mapOpen ? ly : 0, ui && !mapOpen ? ry : 0);
     if (ptr.on) { /* カーソル操作中はスティックで動かない */ } else { if (lx||ly) { mx=lx; my=ly; } if (rx||ry) { ax=rx; ay=ry; assist=true; aiming=true; } }
-    if (!setOpen && !ptr.on && (bp(K.fire) || bp(K.fire2))) { fire=true; assist=true; }
+    // ウルト：LT＋RTを同時に押して長押し（押した時間の差が0.2秒以内。ダッシュしながら撃つのと区別する）。同時押しの間は撃たない・ダッシュしない
+    { const l = bp(K.dash), r = bp(K.fire); if (be(K.dash)) gpHold.l = n; if (be(K.fire)) gpHold.r = n;
+      if (l && r && !gpHold.ch && Math.abs((gpHold.l||0)-(gpHold.r||0)) < ULT_GAP) gpHold.ch = Math.max(gpHold.l, gpHold.r);
+      if (!l || !r) { gpHold.ch = 0; gpHold.ud = false; }
+      if (gpHold.ch && !gpHold.ud && n-gpHold.ch >= ULT_HOLD && !ui) { gpHold.ud = true; ctr.ul++; } }
+    const chord = !!gpHold.ch;
+    if (!setOpen && !ptr.on && !chord && (bp(K.fire) || bp(K.fire2))) { fire=true; assist=true; }
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／LB：魔法の範囲攻撃モード
     if (!ui) { if (bp(K.act) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || bp(K.act); else if (be(K.act)) ctr.rl++;
       if (be(K.heal)) ringPress(); if (!bp(K.heal) && gpPrev[K.heal] && ring.down) ringRelease();
-      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; if (be(K.dodge)) dodge = true; if (be(K.cue)) ctr.qu++; if (be(K.ult)) ctr.ul++; if (bp(K.dash)) dash = true; }
+      if (be(K.sw)) ctr.sw++; if (be(K.mm)) ctr.mm++; if (be(K.dodge)) dodge = true; if (be(K.cue)) ctr.qu++; if (bp(K.dash) && !chord) dash = true; }
     gpPrev = gp.buttons.map(b=>b.pressed); }
   if (setOpen) { mx = my = 0; fire = false; }
   if (touch.move) { const s=stickOf(touch.move); mx=s.x; my=s.y; if (Math.hypot(touch.move.x-touch.move.ox, touch.move.y-touch.move.oy) > 95) dash = true; } // スマホ：スティックを大きく倒すとダッシュ
@@ -1638,7 +1644,7 @@ function drawWeaponHud(mp, bx, by){
       ctx.fillStyle = qc > 0 ? '#9aa4c0' : '#8fd'; ctx.fillText(`キュー［${bn(cfg.bind.cue)}／F］${h.q[0]}　${qc > 0 ? qc.toFixed(1) : 'OK'}`, bx+2, by-90);
       if (qc > 0) { ctx.fillStyle='#8fd4'; ctx.fillRect(bx-4, by-88, 228*(1-qc/h.q[2]), 2); }
       const uc = ucdOf(mp); ctx.fillStyle='#000a'; ctx.fillRect(bx-4, by-126, 228, 18); // ウルト
-      ctx.fillStyle = uc > 0 ? '#9aa4c0' : '#ffd36a'; ctx.fillText(`ウルト［${bn(cfg.bind.ult)}／Z］${h.u[0]}　${uc > 0 ? uc.toFixed(0) : 'OK'}`, bx+2, by-112);
+      ctx.fillStyle = uc > 0 ? '#9aa4c0' : '#ffd36a'; ctx.fillText(`ウルト［${bn(cfg.bind.dash)}+${bn(cfg.bind.fire)}長押し／Z］${h.u[0]}　${uc > 0 ? uc.toFixed(0) : 'OK'}`, bx+2, by-112);
       if (uc > 0) { ctx.fillStyle='#ffd36a66'; ctx.fillRect(bx-4, by-110, 228*(1-uc/h.u[2]), 2); } } }
   const w = wOf(mp), cur = mp.wp[4], mag = mp.wp[cur*2+1], ow = wAt(mp, cur^1), other = { name: ow ? ow.name : 'なし' };
   if (!w) { const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left'; ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif';
@@ -2007,7 +2013,7 @@ function uiPad(edge){
 }
 
 // ===== 設定（スタート長押し・Esc・持ち物ボタン長押し） =====
-const BIND0 = { fire:7, fire2:11, act:2, sw:3, mm:4, heal:12, bag:9, map:8, dodge:1, dash:6, cue:5, ult:10 }; // ウルトはLS押し込み // キューはRB（撃つ（サブ）はRSへ移動）
+const BIND0 = { fire:7, fire2:11, act:2, sw:3, mm:4, heal:12, bag:9, map:8, dodge:1, dash:6, cue:5 }; // ウルトは「ダッシュ＋撃つ」（LT＋RT）同時長押し // キューはRB（撃つ（サブ）はRSへ移動）
 const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビュー','メニュー','LS','RS'] },
   ps:{ name:'PlayStation', b:['✕','○','□','△','L1','R1','L2','R2','クリエイト','オプション','L3','R3'] },
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
@@ -2028,7 +2034,7 @@ const SETS = [
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
   { k:'ptrSpd', name:'🎮 カーソルの速さ', show:()=>cfg.ptrSpd, adj:d=>{ cfg.ptrSpd = Math.max(1, Math.min(10, cfg.ptrSpd+d)); } },
   { k:'padType', name:'🎮 ボタン表示', show:()=>PADS[cfg.padType].name, adj:d=>{ const ks = Object.keys(PADS); cfg.padType = ks[(ks.indexOf(cfg.padType)+(d<0?ks.length-1:1))%ks.length]; } },
-  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['dodge','回避・乗り越え'],['cue','キュー（戦術スキル）'],['ult','ウルト'],['dash','ダッシュ（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
+  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','魔法の範囲攻撃'],['heal','回復'],['dodge','回避・乗り越え'],['cue','キュー（戦術スキル）'],['dash','ダッシュ（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
     .map(([b,name]) => ({ k:'b_'+b, bind:b, name:'🎮 '+name, show:()=>bindWait===b ? '押して…' : bn(cfg.bind[b]), adj:()=>{ bindWait = b; bindReady = false; } })),
   { k:'bReset', name:'🎮 ボタンを初期に戻す', show:()=>'戻す', adj:()=>{ cfg.bind = { ...BIND0 }; } },
 ];
