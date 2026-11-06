@@ -60,7 +60,7 @@
 // ===== 設定 =====
 const MAX_PLAYERS = 5;
 const MAP = 2000, MATCH_SEC = 600, PREFIX = 'hbr-room-';
-const R = 18, SPEED = 220;
+const R = 13, SPEED = 220;
 // ---- ここから下の数値は試作用の仮（未決定・あとで差し替え） ----
 const GUN = { rate:0.15, speed:900, dmg:12, range:700 };
 const CRAWL = 60;                    // ダウン中の這う速度
@@ -78,7 +78,8 @@ const COLORS = ['#ffb347','#5bc0ff','#ff6b9a','#7be07b','#c89bff'];
 
 // ===== 見た目（斜め見下ろし）とスキン =====
 // ゲームの中身（移動・弾・当たり判定）は足元の位置で計算し、描くときだけ立体的に見せる
-const BODY_H = 22;      // 体の中心（銃を構える高さ）。弾もこの高さで描く
+const CHAR_SCALE = 0.7; // キャラの表示の大きさ（1でもとの大きさ）
+const BODY_H = 22*CHAR_SCALE; // 体の中心（銃を構える高さ）。弾もこの高さで描く
 const WALL_H = 46;      // 障害物の高さ（見た目だけ）
 const SPRITE_W = 48, SPRITE_H = 64;   // キャラ画像の表示サイズ（足元が画像の下端中央）
 // キャラ画像に差し替えるとき：ここに書くだけでOK。横向きは「右向き」1枚（左向きは自動で反転）
@@ -405,26 +406,26 @@ function drawBlock(o){
 }
 function drawPlayer(v){
   const { p, x, y, ax, ay, mine, ally } = v;
-  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y, p.down?26:15, p.down?8:6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y, p.down?19:11, p.down?6:4, 0, 0, Math.PI*2); ctx.fill();
   if (p.down) {
     if (p.dsh > 0) { const a=Math.atan2(ay,ax); ctx.strokeStyle=`rgba(120,200,255,${0.3+0.6*p.dsh/DOWN_SHIELD})`; ctx.lineWidth=5;
       ctx.beginPath(); ctx.arc(x,y-8,R+16,a-DSHIELD_ARC,a+DSHIELD_ARC); ctx.stroke(); }
     if (p.rv > 0) { ctx.strokeStyle='#5f8'; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(x,y-8,R+8,-Math.PI/2,-Math.PI/2+Math.PI*2*p.rv); ctx.stroke(); }
     drawHero(x, y, ax, ay, p, 0, true, false); return;
   }
-  if (mine || ally) { ctx.strokeStyle = mine ? '#fff' : '#5f8'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(x, y, 20, 8, 0, 0, Math.PI*2); ctx.stroke(); }
+  if (mine || ally) { ctx.strokeStyle = mine ? '#fff' : '#5f8'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(x, y, 15, 6, 0, 0, Math.PI*2); ctx.stroke(); }
   drawHero(x, y, ax, ay, p, v.moving ? p._walk : 0, false, false);
 }
 // キャラ1人を描く（画像があれば画像、なければ仮の絵）
 function drawHero(x, y, ax, ay, p, walk, down, sil){
   const dir = down ? 'front' : dirOf(ax, ay);
   const col = COLORS[p.slot], S = c => sil ? '#bfffd4' : c;
-  ctx.save(); ctx.translate(x, y);
+  ctx.save(); ctx.translate(x, y); ctx.scale(CHAR_SCALE, CHAR_SCALE);
   if (down) { ctx.translate(28, -6); ctx.rotate(-Math.PI/2); ctx.globalAlpha *= 0.85; } // 倒れている
   if (dir==='left') ctx.scale(-1, 1);
   const gun = () => { if (down) return; ctx.save(); if (dir==='left') ctx.scale(-1,1);
     ctx.strokeStyle=S('#2a2d36'); ctx.lineWidth=5; ctx.lineCap='round'; ctx.beginPath();
-    ctx.moveTo(ax*4, -BODY_H+ay*4); ctx.lineTo(ax*26, -BODY_H+ay*20); ctx.stroke(); ctx.restore(); };
+    ctx.moveTo(ax*4, -22+ay*4); ctx.lineTo(ax*26, -22+ay*20); ctx.stroke(); ctx.restore(); };
   const img = skinImg(p.skin||'default', dir==='left'||dir==='right' ? 'side' : dir);
   if (dir==='back') gun();
   if (img) { ctx.drawImage(img, -SPRITE_W/2, -SPRITE_H, SPRITE_W, SPRITE_H); }
@@ -451,7 +452,7 @@ function drawLabel(v){
   ctx.textAlign='center'; ctx.font='bold 12px sans-serif';
   if (p.down) { ctx.fillStyle='#fff'; ctx.fillText(`${p.name}　ダウン ${p.bl}秒`, x, y-34);
     if (ally && !mine) { ctx.fillStyle='#5f8'; ctx.fillText('蘇生：近づいて長押し', x, y+26); } return; }
-  const top = y - SPRITE_H - 6;
+  const top = y - SPRITE_H*CHAR_SCALE - 6;
   ctx.fillStyle = ally ? '#bfffd4' : '#fff'; ctx.font='bold 13px sans-serif'; ctx.fillText(p.name, x, top-10);
   ctx.fillStyle='#000a'; ctx.fillRect(x-22,top-5,44,7);
   ctx.fillStyle='#6cf'; ctx.fillRect(x-22,top-5,44*p.sh/100,3); ctx.fillStyle='#e55'; ctx.fillRect(x-22,top-2,44*p.hp/100,4);
@@ -470,7 +471,7 @@ function draw(me){
   for (let g=0; g<=MAP; g+=100){ ctx.moveTo(g,0); ctx.lineTo(g,MAP); ctx.moveTo(0,g); ctx.lineTo(MAP,g); } ctx.stroke();
   ctx.strokeStyle='#6b5'; ctx.lineWidth=4; ctx.strokeRect(0,0,MAP,MAP);
   // 弾の影（地面）
-  ctx.fillStyle='rgba(0,0,0,.25)'; for (const b of state.bullets){ ctx.beginPath(); ctx.ellipse(b.x,b.y,4,2,0,0,Math.PI*2); ctx.fill(); }
+  ctx.fillStyle='rgba(0,0,0,.25)'; for (const b of state.bullets){ ctx.beginPath(); ctx.ellipse(b.x,b.y,2.5,1.2,0,0,Math.PI*2); ctx.fill(); }
   const myTeam = mp ? teamOf(mp.slot) : -1;
   // 手前（画面の下）にあるものほど後から描く
   const list = OBS.map(o => ({ k:o.y+o.h, o }));
@@ -489,10 +490,10 @@ function draw(me){
   for (const it of list) { if (it.o) drawBlock(it.o); else drawPlayer(it.v); }
   // 壁の裏に隠れた自分・味方はシルエットで見せる（敵は見えない）
   for (const v of vis) { if (!v.mine && !v.ally) continue;
-    if (OBS.some(o => o.y+o.h > v.y && v.x+14 > o.x && v.x-14 < o.x+o.w && v.y > o.y-WALL_H && v.y-SPRITE_H < o.y+o.h)) {
+    if (OBS.some(o => o.y+o.h > v.y && v.x+14 > o.x && v.x-14 < o.x+o.w && v.y > o.y-WALL_H && v.y-SPRITE_H*CHAR_SCALE < o.y+o.h)) {
       ctx.save(); ctx.globalAlpha=0.45; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, true); ctx.restore(); } }
   // 弾（体の高さ）
-  ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,4,0,Math.PI*2); ctx.fill(); }
+  ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,2.5,0,Math.PI*2); ctx.fill(); }
   // 名前・体力（いちばん上に）
   for (const v of vis) drawLabel(v);
   ctx.restore();
