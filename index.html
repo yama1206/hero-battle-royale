@@ -11,7 +11,7 @@
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
   #lobby { position:absolute; inset:0; display:flex; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); overflow-y:auto; touch-action:pan-y; }
   #lobby .card { margin:auto; }
-  #ver { position:absolute; top:max(6px,env(safe-area-inset-top)); right:max(10px,env(safe-area-inset-right)); font-size:12px; color:var(--sub); pointer-events:none; }
+  #ver { position:absolute; top:max(6px,env(safe-area-inset-top)); right:max(10px,env(safe-area-inset-right)); font-size:12px; color:var(--sub); text-align:right; z-index:2; } #ver button { display:block; width:auto; margin:4px 0 0 auto; padding:4px 10px; font-size:12px; }
   #safe { position:fixed; visibility:hidden; pointer-events:none; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .card { width:100%; max-width:420px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
   h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--sub); font-size:13px; margin-bottom:16px; }
@@ -55,7 +55,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.6</div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.6.7<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階6：物資</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
