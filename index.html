@@ -78,6 +78,7 @@ const REVIVE_RANGE = 50;
 const REVIVE_HP = 30;                // 蘇生後のHP（シールドは0）
 const ENGAGE_MS = 10000;             // BOTの攻撃許可が続く時間
 const BOT_SPREAD = 0.12;
+const ZOOM = 0.8;                    // 画面の拡大率（小さいほど広く見える）
 // ----------------------------------------------------------------
 const COLORS = ['#ffb347','#5bc0ff','#ff6b9a','#7be07b','#c89bff'];
 
@@ -503,6 +504,11 @@ const killerName = id => { const k=state.players.find(x=>x.id===id); return k?k.
 function eliminate(p, why){ if (p.out) return; p.out=true; p.down=false; feed(`${p.name} 脱落（${why}）`); }
 
 // BOT（仮）
+// 自分の画面に見えている範囲（中心からの半分の幅・高さ、世界の大きさで）
+const myView = () => ({ w:Math.round(innerWidth/ZOOM/2), h:Math.round(innerHeight/ZOOM/2) });
+// BOTは、相手（人間）の画面に自分が映っているときだけ撃つ
+function seenBy(q, p){ if (q.bot) return true; const v = q.id===myId ? myView() : (inputs[q.id]&&inputs[q.id].vw ? {w:inputs[q.id].vw,h:inputs[q.id].vh} : {w:300,h:300});
+  return Math.abs(p.x-q.x) < v.w-20 && Math.abs(p.y-q.y) < v.h-20; }
 function botThink(p, dt){
   const now = Date.now(), myTeam = teamOf(p.slot);
   const mates = state.players.filter(q=>q!==p && teamOf(q.slot)===myTeam && !q.out);
@@ -512,8 +518,8 @@ function botThink(p, dt){
   if (p.th <= 0) { p.th = 0.3; // 判断は一定間隔で更新
     let tgt=null, bd=GUN.range*0.9;
     for (const q of state.players) { if (q.out || teamOf(q.slot)===myTeam) continue;
-      const d=Math.hypot(q.x-p.x,q.y-p.y); if (d<bd && losClear(p,q)){ bd=d; tgt=q; } }
-    if (p.lastHitBy && now-p.hitAt<2000) { const q=state.players.find(x=>x.id===p.lastHitBy); if (q&&!q.out) tgt=q; }
+      const d=Math.hypot(q.x-p.x,q.y-p.y); if (d<bd && seenBy(q,p) && losClear(p,q)){ bd=d; tgt=q; } }
+    if (p.lastHitBy && now-p.hitAt<2000) { const q=state.players.find(x=>x.id===p.lastHitBy); if (q&&!q.out&&seenBy(q,p)) tgt=q; }
     // 攻撃開始ルール：人間がいるチームのBOTは、許可が出るまで撃たない
     const mayShoot = !humanTeam || (engaged[myTeam]||0) > now;
     p.tgt = tgt && mayShoot ? tgt.id : null;
@@ -532,7 +538,7 @@ function botThink(p, dt){
   if (m < (rev ? REVIVE_RANGE*0.6 : 20)) { mx=0; my=0; } else { mx/=m; my/=m; }
   let ax=p.ax, ay=p.ay, fire=false, act=false;
   if (rev && m < REVIVE_RANGE) act = true;
-  else if (tgt) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; mx*=0.5; my*=0.5; }
+  else if (tgt && seenBy(tgt,p)) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; mx*=0.5; my*=0.5; }
   if (!fire && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
   if (p.down) { fire=false; act=false; }
   return { mx, my, ax, ay, fire, act };
@@ -614,7 +620,7 @@ function frame(t){
   const me = state.phase==='lobby' ? null : localStep(dt);
   if (isHost) { hostTick(dt); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
-      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fire:me.fire, act:me.act }); }
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fire:me.fire, act:me.act, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (state.phase!=='lobby') draw(me);
@@ -931,14 +937,14 @@ function drawLabel(v){
 
 function draw(me){
   const M = world();
-  const W=innerWidth, H=innerHeight;
+  let W=innerWidth/ZOOM, H=innerHeight/ZOOM; // ここから世界の描画は、ズームアウトした広さで
   const mp = state.players.find(p=>p.id===myId);
   let cam = me || { x:MAP/2, y:MAP/2 };
   if (mp && mp.out) { const m = state.players.find(q=>!q.out && teamOf(q.slot)===teamOf(mp.slot)); if (m) cam = { x:isHost?m.x:m.dx, y:isHost?m.y:m.dy }; } // 脱落後は味方を観戦
   const cx=Math.round(cam.x-W/2), cy=Math.round(cam.y-BODY_H-H/2); // 体の中心が画面の真ん中に来るように
   const t = performance.now()/1000;
   ctx.fillStyle='#1d3524'; ctx.fillRect(0,0,W,H);
-  ctx.save(); ctx.translate(-cx,-cy);
+  ctx.save(); ctx.scale(ZOOM,ZOOM); ctx.translate(-cx,-cy);
   // 地面（チャンク）。まだ描いていない板は1フレームに少しずつ作る
   chunkBudget = 3; chunkMax = (Math.ceil(W/CH)+2)*(Math.ceil(H/CH)+2)+12;
   for (let iy=Math.floor(cy/CH); iy<=Math.floor((cy+H)/CH); iy++) for (let ix=Math.floor(cx/CH); ix<=Math.floor((cx+W)/CH); ix++) {
@@ -982,7 +988,7 @@ function draw(me){
   ctx.fillStyle='#ffe28a'; for (const b of state.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,2.5,0,Math.PI*2); ctx.fill(); }
   // 名前・体力（いちばん上に）
   for (const v of vis) if (!v.hid || v.mine || v.ally) drawLabel(v);
-  ctx.restore();
+  ctx.restore(); W=innerWidth; H=innerHeight; // ここから画面のUI
   // いまいるエリアの名前
   const ar = areaAt(cam.x, cam.y);
   if (ar && ar.id !== curArea) { curArea = ar.id; areaToast = { name: ar.name, at: t }; }
