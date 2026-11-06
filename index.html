@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.9<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.10<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -79,7 +79,7 @@
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
   </div>
   <div id="msg"></div>
-  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・R1で攻撃・L1で構え（近接武器はダッシュ）・R2でキュー・L2＋R2同時長押しでウルト・Bで回避・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・十字左で武器のモード切替／PC WASD移動・マウス照準・クリック攻撃・右クリック／Shiftで構え・Fでキュー・Zでウルト・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復<br>持ち物：スタート・I・Tab（スマホは持ち物ボタン）／設定：スタート長押し・Esc（スマホは持ち物ボタン長押し）／マップ：セレクト・M（スマホはミニマップを押す）<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
+  <div class="help">操作：コントローラー 左スティック移動・右スティック照準・R1で攻撃・L1で構え（近接武器はダッシュ）・R2でキュー・L2＋R2同時長押しでウルト・Bで回避・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・十字左で武器のモード切替・R3でパンチ／PC WASD移動・マウス照準・クリック攻撃・右クリック／Shiftで構え・Fでキュー・Zでウルト・Cでパンチ・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復<br>持ち物：スタート・I・Tab（スマホは持ち物ボタン）／設定：スタート長押し・Esc（スマホは持ち物ボタン長押し）／マップ：セレクト・M（スマホはミニマップを押す）<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
 </div></div>
 
 <div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="setp" class="panel"></div><div id="boxp" class="panel"></div><div id="ptr"><svg viewBox="0 0 26 26"><path d="M3 2l17 11-8 1 5 9-3 2-5-9-6 6z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
@@ -574,7 +574,7 @@ const dz = v => Math.abs(v) < 0.2 ? 0 : v;
 
 let lastAim = { x:1, y:0 }, lastFace = { x:1, y:0 }, gpPrev = [], mouseAt = 0, gpHold = {};
 function readInput(me){
-  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act, aiming=false, dash=false, dodge=keyDodge, ads=!!(keys.ShiftLeft||keys.ShiftRight||mouse.rdown||touch.ads), stickAim=false; keyDodge=false;
+  let mx=0, my=0, ax=0, ay=0, fire=false, assist=false, ta=false, act=!!keys.KeyE || !!touch.act, idn=!!keys.KeyE || !!touch.act, aiming=false, dash=false, dodge=keyDodge, ads=!!(keys.ShiftLeft||keys.ShiftRight||mouse.rdown||touch.ads), stickAim=false, punch=!!keys.KeyC; keyDodge=false;
   const tR = performance.now(), rdt = Math.min(0.05, (tR-lastRead)/1000); lastRead = tR;
   if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
@@ -602,7 +602,8 @@ function readInput(me){
       if (!l || !r) { gpHold.ch = 0; gpHold.ud = false; }
       if (gpHold.ch && !gpHold.ud && n-gpHold.ch >= ULT_HOLD && !ui) { gpHold.ud = true; ctr.ul++; } }
     const chord = !!gpHold.ch;
-    if (!setOpen && !ptr.on && !chord && (bp(K.fire) || bp(K.fire2))) { fire=true; assist=true; }
+    if (!setOpen && !ptr.on && !chord && bp(K.fire)) { fire=true; assist=true; }
+    if (!setOpen && !ptr.on && !ui && bp(K.punch)) punch = true; // R3：どの武器を持っていてもパンチ
     // X：近くにダウンした味方がいれば蘇生（長押し）、いなければリロード／Y：武器切替／十字左：武器のモード切替／L1：構え
     if (!ui) { if (bp(K.act) && canRevive()) act=true; else if (curTarget || inter.on) idn = idn || bp(K.act); else if (be(K.act)) ctr.rl++;
       if (be(K.heal)) ringPress(); if (!bp(K.heal) && gpPrev[K.heal] && ring.down) ringRelease();
@@ -625,7 +626,7 @@ function readInput(me){
   else if (fire) lastFace = { x:lastAim.x, y:lastAim.y };
   let aim = lastAim;
   if (assist && me && cfg.assist) aim = aimAssist(me, aim);
-  return { mx, my, ax:aim.x, ay:aim.y, fx:lastFace.x, fy:lastFace.y, fire, act, ta, idn, dash, dodge, ads };
+  return { mx, my, ax:aim.x, ay:aim.y, fx:lastFace.x, fy:lastFace.y, fire, act, ta, idn, dash, dodge, ads, punch };
 }
 // エイムアシスト：照準の近くの敵へ少しだけ寄せる。遠いほど弱い
 function aimAssist(me, aim){
@@ -665,7 +666,7 @@ function localStep(dt){
     local.x += g.x*sp*dt; local.y += g.y*sp*dt; pushOut(local, ox, oy); if ((g.t -= dt) <= 0) local.bd = null; }
   else if (!me.out) { const sp = me.down ? CRAWL : SPEED*moveMul(me, inp.fire)*(inp.dash && !me.down ? DASH_MUL : 1)*(phOf(me) ? PHANTOM_SPD : 1)*(inp.ads && !me.down ? ADS_MOVE : 1), ox = local.x, oy = local.y; local.x += inp.mx*sp*dt; local.y += inp.my*sp*dt; pushOut(local, ox, oy); }
   local.ax = inp.ax; local.ay = inp.ay; local.fx = inp.fx; local.fy = inp.fy; local.fire = inp.fire && alive(me); local.act = inp.act && alive(me); local.id = myId;
-  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm; local.dgc = ctr.dg; local.quc = ctr.qu; local.ulc = ctr.ul; local.dash = !!inp.dash; local.ads = !!inp.ads && alive(me) && !me.down; if (local.dg || local.bd) local.fire = false;
+  local.ta = inp.ta; local.mv = Math.hypot(inp.mx, inp.my); local.sw = ctr.sw; local.rl = ctr.rl; local.mm = ctr.mm; local.dgc = ctr.dg; local.quc = ctr.qu; local.ulc = ctr.ul; local.dash = !!inp.dash; local.ads = !!inp.ads && alive(me) && !me.down; local.pn = !!inp.punch && alive(me) && !me.down; if (local.dg || local.bd) local.pn = false; if (local.dg || local.bd) local.fire = false;
   return local;
 }
 
@@ -881,8 +882,10 @@ function weaponStep(p, inp, dt, now){
   if (p.swt > 0) p.swt -= dt;
   if (pressed('Sw')) { p.rl = 0; p.wp[4] ^= 1; w = wOf(p); p.swt = SWITCH_SEC/(1 + (w && !w.melee ? ptv(p,p.wp[4],'grp') : 0)); p.bl = 0; } // 持ち替えるとリロードは取り消し
   if (pressed('Mm') && w && w.magic) p.mm ^= 1;
-  if (!w) { pressed('Rl'); // 素手：パンチ（剣より弱い近接攻撃。砥石はいらない）
-    if (!inp.fire || p.heal || p.cd > 0 || p.swt > 0 || (p.inv||0) > now) { p.trig = !!inp.fire; return; } p.trig = true;
+  if (inp.pn && !p.heal && !p.aimA && p.cd <= 0 && p.swt <= 0 && !((p.inv||0) > now) && !((p.dgUntil||0) > now) && !((p.bdUntil||0) > now)) { p.rl = 0; punch(p, now); } // R3：武器を持っていてもパンチ（リロードは取り消し）
+  if (!w) { pressed('Rl'); // 素手：撃つボタンでもパンチ
+    if (!inp.fire || p.heal || p.cd > 0 || p.swt > 0 || (p.inv||0) > now) { p.trig = !!inp.fire; return; } p.trig = true; punch(p, now); return; }
+function punch(p, now){ // パンチ（剣より弱い近接攻撃。砥石はいらない）
     if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS;
     const aim = Math.atan2(p.ay, p.ax), f = FIST; p.cd = (1/f.rate)/((p.drUntil||0) > now ? RUSH_RATE : 1); p.lastAtk = now;
     pushEv({ k:'slash', x:p.x, y:p.y, a:+aim.toFixed(2), r:f.reach });
@@ -1285,7 +1288,7 @@ function frame(t){
   const me = state.phase==='lobby' ? null : localStep(dt);
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
-      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, dgc:me.dgc, quc:me.quc, ulc:me.ulc, ads:me.ads?1:0, dash:me.dash, vw:myView().w, vh:myView().h }); }
+      hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, dgc:me.dgc, quc:me.quc, ulc:me.ulc, ads:me.ads?1:0, pn:me.pn?1:0, dash:me.dash, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (state.phase!=='lobby') draw(me);
@@ -2033,7 +2036,7 @@ function uiPad(edge){
 }
 
 // ===== 設定（スタート長押し・Esc・持ち物ボタン長押し） =====
-const BIND0 = { fire:5, fire2:11, act:2, sw:3, mm:14, heal:12, bag:9, map:8, dodge:1, cue:7, ult:6, ads:4 }; // りょうさんの指示：R1撃つ・R2キュー・L1構え・十字左モード切替。ウルトはL2＋R2同時長押し。ダッシュは廃止 // キューはRB（撃つ（サブ）はRSへ移動）
+const BIND0 = { fire:5, punch:11, act:2, sw:3, mm:14, heal:12, bag:9, map:8, dodge:1, cue:7, ult:6, ads:4 }; // りょうさんの指示：R1撃つ・R2キュー・L1構え・十字左モード切替。ウルトはL2＋R2同時長押し。ダッシュは廃止 // キューはRB（撃つ（サブ）はRSへ移動）
 const PADS = { xbox:{ name:'Xbox', b:['A','B','X','Y','LB','RB','LT','RT','ビュー','メニュー','LS','RS'] },
   ps:{ name:'PlayStation', b:['✕','○','□','△','L1','R1','L2','R2','クリエイト','オプション','L3','R3'] },
   sw:{ name:'Switch', b:['B','A','Y','X','L','R','ZL','ZR','−','＋','Lスティック','Rスティック'] } };
@@ -2054,7 +2057,7 @@ const SETS = [
   { k:'dmgNum', name:'ダメージの数字', show:()=>cfg.dmgNum?'表示':'非表示', adj:()=>{ cfg.dmgNum ^= 1; } },
   { k:'ptrSpd', name:'🎮 カーソルの速さ', show:()=>cfg.ptrSpd, adj:d=>{ cfg.ptrSpd = Math.max(1, Math.min(10, cfg.ptrSpd+d)); } },
   { k:'padType', name:'🎮 ボタン表示', show:()=>PADS[cfg.padType].name, adj:d=>{ const ks = Object.keys(PADS); cfg.padType = ks[(ks.indexOf(cfg.padType)+(d<0?ks.length-1:1))%ks.length]; } },
-  ...[['fire','撃つ'],['fire2','撃つ（サブ）'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','武器のモード切替（魔法の範囲攻撃）'],['heal','回復'],['dodge','回避・乗り越え'],['cue','キュー（戦術スキル）'],['ult','ウルト（キューと同時長押し）'],['ads','構え（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
+  ...[['fire','撃つ'],['punch','パンチ'],['act','リロード／拾う／蘇生'],['sw','武器の持ち替え'],['mm','武器のモード切替（魔法の範囲攻撃）'],['heal','回復'],['dodge','回避・乗り越え'],['cue','キュー（戦術スキル）'],['ult','ウルト（キューと同時長押し）'],['ads','構え（押している間）'],['bag','持ち物（長押しで設定）'],['map','マップ']]
     .map(([b,name]) => ({ k:'b_'+b, bind:b, name:'🎮 '+name, show:()=>bindWait===b ? '押して…' : bn(cfg.bind[b]), adj:()=>{ bindWait = b; bindReady = false; } })),
   { k:'bReset', name:'🎮 ボタンを初期に戻す', show:()=>'戻す', adj:()=>{ cfg.bind = { ...BIND0 }; } },
 ];
