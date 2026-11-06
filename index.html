@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ヒーローバトルロイヤル（試作）</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root { --bg:#10131a; --panel:#1b2030; --line:#2c3450; --text:#e8ecf5; --sub:#8f9ab8; --accent:#ffb347; --ok:#5bd68a; --ng:#ff6b6b; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; overflow:hidden; touch-action:none; }
+  #lobby { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .card { width:100%; max-width:420px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
+  h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--sub); font-size:13px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--sub); margin:10px 0 4px; }
+  input { width:100%; padding:10px; border-radius:8px; border:1px solid var(--line); background:#0d1018; color:var(--text); font-size:16px; }
+  button { width:100%; margin-top:10px; padding:12px; border:0; border-radius:8px; background:var(--accent); color:#1a1200; font-weight:700; font-size:16px; cursor:pointer; }
+  button.sec { background:#2c3450; color:var(--text); }
+  button:disabled { opacity:.4; cursor:default; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  #roomInfo { display:none; } .code { font-size:32px; letter-spacing:6px; font-weight:800; color:var(--accent); text-align:center; margin:6px 0; }
+  ul { list-style:none; padding:0; margin:8px 0; } li { padding:8px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; font-size:14px; }
+  .tag { font-size:12px; color:var(--sub); } #msg { color:var(--ng); font-size:13px; min-height:18px; margin-top:8px; }
+  #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; }
+  #hud { position:absolute; left:12px; top:10px; font-size:13px; background:rgba(0,0,0,.45); padding:8px 10px; border-radius:8px; pointer-events:none; }
+  #timer { position:absolute; left:50%; top:10px; transform:translateX(-50%); font-size:22px; font-weight:800; background:rgba(0,0,0,.45); padding:4px 14px; border-radius:8px; }
+</style>
+</head>
+<body>
+<div id="lobby"><div class="card">
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階1：5人接続・同じ画面</div>
+  <div id="entry">
+    <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
+    <button id="btnHost">部屋を作る</button>
+    <label>部屋コード</label>
+    <div class="row"><input id="codeIn" maxlength="4" placeholder="ABCD" style="text-transform:uppercase"><button id="btnJoin" class="sec" style="margin-top:0">参加</button></div>
+  </div>
+  <div id="roomInfo">
+    <div class="sub" style="margin:0;text-align:center">部屋コード</div><div class="code" id="codeOut">----</div>
+    <ul id="plist"></ul>
+    <button id="btnStart" style="display:none">試合開始（空き枠はBOT）</button>
+    <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
+  </div>
+  <div id="msg"></div>
+</div></div>
+
+<div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div></div>
+
+<script>
+// ===== 設定 =====
+const MAX_PLAYERS = 5;          // 試作は5人
+const MAP = 2000;               // マップの一辺
+const MATCH_SEC = 600;          // 10分
+const PREFIX = 'hbr-room-';
+const COLORS = ['#ffb347','#5bc0ff','#ff6b9a','#7be07b','#c89bff'];
+const BOT_NAMES = ['アルファ','ブラボー','チャーリー','デルタ','エコー','フォックス','ゴルフ','ホテル'];
+
+// ===== 状態 =====
+let peer = null, isHost = false, myId = null, roomCode = '';
+let conns = {};        // ホスト：peerId -> conn
+let hostConn = null;   // 参加者：ホストへの接続
+// state はホストが正。参加者は受け取って描画するだけ
+let state = { phase:'lobby', players:[], startAt:0 };
+const $ = id => document.getElementById(id);
+const msg = t => $('msg').textContent = t || '';
+
+function genCode(){ const c='ABCDEFGHJKLMNPQRSTUVWXYZ'; let s=''; for(let i=0;i<4;i++) s+=c[Math.random()*c.length|0]; return s; }
+function myName(){ return ($('name').value.trim() || 'プレイヤー').slice(0,10); }
+
+// ===== ホスト =====
+function startHost(){
+  roomCode = genCode(); isHost = true;
+  peer = new Peer(PREFIX + roomCode);
+  peer.on('open', id => {
+    myId = id;
+    state.players = [{ id, name:myName(), bot:false, slot:0 }];
+    showRoom(); broadcast();
+  });
+  peer.on('connection', c => {
+    c.on('open', () => {
+      if (state.phase !== 'lobby' || state.players.filter(p=>!p.bot).length >= MAX_PLAYERS) {
+        c.send({ t:'reject', reason: state.phase!=='lobby' ? '試合中です' : '満員です' }); setTimeout(()=>c.close(),300); return;
+      }
+      conns[c.peer] = c;
+    });
+    c.on('data', d => onHostData(c, d));
+    c.on('close', () => onLeave(c.peer));
+    c.on('error', () => onLeave(c.peer));
+  });
+  peer.on('error', e => { if (e.type==='unavailable-id') { peer.destroy(); startHost(); } else msg('接続エラー：'+e.type); });
+}
+function onHostData(c, d){
+  if (d.t === 'hello') {
+    const used = state.players.map(p=>p.slot);
+    let slot = 0; while (used.includes(slot)) slot++;
+    state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot });
+    renderList(); broadcast();
+  }
+}
+function onLeave(pid){
+  if (!conns[pid]) return; delete conns[pid];
+  const p = state.players.find(p=>p.id===pid); if (!p) return;
+  if (state.phase === 'lobby') state.players = state.players.filter(x=>x.id!==pid);
+  else { p.bot = true; p.name = p.name + '(BOT)'; } // 抜けた人はBOTに置き換え
+  renderList(); broadcast();
+}
+function hostStartMatch(){
+  // 空き枠をBOTで埋める（名前は重複なし）
+  const names = BOT_NAMES.slice().sort(()=>Math.random()-.5);
+  for (let s=0; s<MAX_PLAYERS; s++) {
+    if (!state.players.some(p=>p.slot===s)) state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s });
+  }
+  // 初期位置：マップ中央付近に円形配置
+  state.players.forEach(p => { const a = p.slot/MAX_PLAYERS*Math.PI*2; p.x = MAP/2 + Math.cos(a)*250; p.y = MAP/2 + Math.sin(a)*250; });
+  state.phase = 'match'; state.startAt = Date.now();
+  broadcast(); enterGame();
+}
+function broadcast(){
+  const pkt = { t:'state', s:state, now:Date.now() };
+  for (const id in conns) if (conns[id].open) conns[id].send(pkt);
+}
+setInterval(() => { if (isHost) broadcast(); }, 100); // 10回/秒で同期
+
+// ===== 参加者 =====
+let clockOffset = 0; // ホスト時刻 - 自分の時刻
+function startJoin(){
+  roomCode = $('codeIn').value.trim().toUpperCase();
+  if (roomCode.length !== 4) return msg('部屋コードは4文字です');
+  peer = new Peer();
+  peer.on('open', id => {
+    myId = id;
+    hostConn = peer.connect(PREFIX + roomCode, { reliable:true });
+    const to = setTimeout(()=>msg('部屋が見つかりません'), 8000);
+    hostConn.on('open', () => { clearTimeout(to); hostConn.send({ t:'hello', name:myName() }); showRoom(); });
+    hostConn.on('data', d => {
+      if (d.t === 'reject') { msg(d.reason); return; }
+      if (d.t === 'state') {
+        clockOffset = d.now - Date.now();
+        const wasLobby = state.phase === 'lobby'; state = d.s;
+        if (wasLobby && state.phase === 'match') enterGame(); else renderList();
+      }
+    });
+    hostConn.on('close', () => { msg('ホストとの接続が切れました'); });
+  });
+  peer.on('error', e => msg(e.type==='peer-unavailable' ? '部屋が見つかりません' : '接続エラー：'+e.type));
+}
+
+// ===== ロビー表示 =====
+function showRoom(){ $('entry').style.display='none'; $('roomInfo').style.display='block'; $('codeOut').textContent=roomCode;
+  $('btnStart').style.display = isHost?'block':'none'; $('waitTxt').style.display = isHost?'none':'block'; msg(''); renderList(); }
+function renderList(){
+  const ps = state.players.slice().sort((a,b)=>a.slot-b.slot);
+  let h = ''; for (let s=0; s<MAX_PLAYERS; s++) { const p = ps.find(p=>p.slot===s);
+    h += `<li><span style="color:${COLORS[s]}">● ${p?esc(p.name):'（空き）'}</span><span class="tag">${p?(p.bot?'BOT':(s===0?'ホスト':'参加')):(isHost?'開始時BOT':'')}${p&&p.id===myId?'・あなた':''}</span></li>`; }
+  $('plist').innerHTML = h;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ===== ゲーム画面 =====
+const cv = $('cv'), ctx = cv.getContext('2d');
+function resize(){ const r = devicePixelRatio||1; cv.width = innerWidth*r; cv.height = innerHeight*r; ctx.setTransform(r,0,0,r,0,0); }
+addEventListener('resize', resize);
+function enterGame(){ $('lobby').style.display='none'; $('game').style.display='block'; resize(); requestAnimationFrame(draw); }
+function draw(){
+  const W = innerWidth, H = innerHeight;
+  const me = state.players.find(p=>p.id===myId) || { x:MAP/2, y:MAP/2 };
+  const cx = me.x - W/2, cy = me.y - H/2; // カメラは自分中心
+  ctx.fillStyle = '#1a2a1e'; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.translate(-cx,-cy);
+  ctx.fillStyle = '#24402b'; ctx.fillRect(0,0,MAP,MAP);
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  for (let g=0; g<=MAP; g+=100) { ctx.beginPath(); ctx.moveTo(g,0); ctx.lineTo(g,MAP); ctx.moveTo(0,g); ctx.lineTo(MAP,g); ctx.stroke(); }
+  ctx.strokeStyle = '#6b5'; ctx.lineWidth = 4; ctx.strokeRect(0,0,MAP,MAP);
+  for (const p of state.players) {
+    ctx.fillStyle = COLORS[p.slot]; ctx.beginPath(); ctx.arc(p.x,p.y,18,0,Math.PI*2); ctx.fill();
+    if (p.id===myId) { ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.stroke(); }
+    ctx.fillStyle='#fff'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.fillText(p.name, p.x, p.y-26);
+  }
+  ctx.restore();
+  // タイマー（ホスト時刻基準で全員そろう）
+  const left = Math.max(0, MATCH_SEC - Math.floor((Date.now()+clockOffset-state.startAt)/1000));
+  $('timer').textContent = `${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
+  const humans = state.players.filter(p=>!p.bot).length;
+  $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>人間 ${humans}人・BOT ${state.players.length-humans}人`;
+  requestAnimationFrame(draw);
+}
+
+$('btnHost').onclick = () => { msg('部屋を作成中…'); startHost(); };
+$('btnJoin').onclick = () => { msg('接続中…'); startJoin(); };
+$('btnStart').onclick = hostStartMatch;
+</script>
+</body>
+</html>
