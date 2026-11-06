@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.8<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.9<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -108,6 +108,7 @@ const WEAPONS = {
            area:{ dist:300, start:40, aimSpd:300, r:80, delay:1.0, dmg:35, mp:50, cd:1.2, move:.5 } }, // 範囲攻撃：押している間、自分の近く(40)から狙う方向へ円が進み（毎秒300・最大300）、離したところで1秒後に爆発。MP50（りょうさんの指示）
 };
 const WIDS = Object.keys(WEAPONS);
+const FIST = { dmg:10, rate:2, reach:30, arc:Math.PI/2 }; // 素手のパンチ（仮）：剣は35ダメージ・1.5回/秒・届く距離39
 const AMMO_NAME = { s:'小口径弾', l:'大口径弾' };
 const MP_MAX = 100, MP_REGEN = 4,  /* りょうさんの指示：回復を遅く（10→4/秒） */ SWITCH_SEC = 0.3; // 武器の持ち替え時間は仮
 const wAt = (p, s) => p && p.wp && p.wp[s*2] >= 0 ? WEAPONS[WIDS[p.wp[s*2]]] : null; // 枠s（0か1）の武器。なければnull
@@ -880,7 +881,16 @@ function weaponStep(p, inp, dt, now){
   if (p.swt > 0) p.swt -= dt;
   if (pressed('Sw')) { p.rl = 0; p.wp[4] ^= 1; w = wOf(p); p.swt = SWITCH_SEC/(1 + (w && !w.melee ? ptv(p,p.wp[4],'grp') : 0)); p.bl = 0; } // 持ち替えるとリロードは取り消し
   if (pressed('Mm') && w && w.magic) p.mm ^= 1;
-  if (!w) { pressed('Rl'); p.trig = !!inp.fire; return; } // 武器なし
+  if (!w) { pressed('Rl'); // 素手：パンチ（剣より弱い近接攻撃。砥石はいらない）
+    if (!inp.fire || p.heal || p.cd > 0 || p.swt > 0 || (p.inv||0) > now) { p.trig = !!inp.fire; return; } p.trig = true;
+    if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS;
+    const aim = Math.atan2(p.ay, p.ax), f = FIST; p.cd = (1/f.rate)/((p.drUntil||0) > now ? RUSH_RATE : 1); p.lastAtk = now;
+    pushEv({ k:'slash', x:p.x, y:p.y, a:+aim.toFixed(2), r:f.reach });
+    for (const q of state.players) { if (q.out || teamOf(q.slot)===teamOf(p.slot)) continue;
+      const dx=q.x-p.x, dy=q.y-p.y, d=Math.hypot(dx,dy); if (d > f.reach+R) continue;
+      let da = Math.abs(Math.atan2(dy,dx) - aim); if (da > Math.PI) da = Math.PI*2-da;
+      if (d < R || da < f.arc/2) damage(q, Math.round(f.dmg*rushM(p, now)), { o:p.id, vx:dx||1, vy:dy }, now); }
+    return; }
   const sl = p.wp[4], mi = sl*2+1, cap = magCap(p, sl);
   if (w.ammo) { const ac = ammoCode(w), have = bagN(p, ac);
     if (p.rl > 0) { p.rl -= dt; if (p.rl <= 0) { const k = Math.min(cap - p.wp[mi], bagN(p, ac)); if (k > 0) { bagTake(p, ac, k); p.wp[mi] += k; } p.rl = 0; } } // 完了時に一括装填
@@ -1658,7 +1668,7 @@ function drawWeaponHud(mp, bx, by){
       if (uc > 0) { ctx.fillStyle='#ffd36a66'; ctx.fillRect(bx-4, by-110, 228*(1-uc/h.u[2]), 2); } } }
   const w = wOf(mp), cur = mp.wp[4], mag = mp.wp[cur*2+1], ow = wAt(mp, cur^1), other = { name: ow ? ow.name : 'なし' };
   if (!w) { const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left'; ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif';
-    ctx.fillText('武器なし', bx+4, y+12); ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(ow ? `もう1つ：${ow.name}（切替）` : 'チェストを開けて武器を拾おう', bx+4, y+36); return; }
+    ctx.fillText('素手（パンチ）', bx+4, y+12); ctx.font='11px sans-serif'; ctx.fillStyle='#9aa4c0'; ctx.fillText(ow ? `もう1つ：${ow.name}（切替）` : 'チェストを開けて武器を拾おう', bx+4, y+36); return; }
   const y = by-58; ctx.fillStyle='#000a'; ctx.fillRect(bx-4, y-4, 228, 50); ctx.textAlign='left';
   ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.fillText(w.name, bx+4, y+12);
   let info = '';
