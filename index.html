@@ -402,7 +402,7 @@ addEventListener('keydown', e => keys[e.code]=true); addEventListener('keyup', e
 addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; }); addEventListener('mouseup', () => mouse.down=false);
 function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
-    if (Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
+    if (canRevive() && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const side = t.clientX < innerWidth/2 ? 'move':'aim';
     if (!touch[side]) touch[side] = { id:t.identifier, ox:t.clientX, oy:t.clientY, x:t.clientX, y:t.clientY }; } e.preventDefault(); }
 function tMove(e){ for (const t of e.changedTouches) for (const k of ['move','aim']) if (touch[k]&&touch[k].id===t.identifier){ touch[k].x=t.clientX; touch[k].y=t.clientY; } e.preventDefault(); }
@@ -521,7 +521,7 @@ function hostTick(dt){
     // 蘇生（長押し）：近くのダウンした味方
     if (inp.act) { const tgt = state.players.find(q=>q.down && !q.out && teamOf(q.slot)===teamOf(p.slot) && Math.hypot(q.x-p.x,q.y-p.y)<REVIVE_RANGE);
       if (tgt) { p.reviving = true; tgt.rvTick = now; tgt.rv += dt/REVIVE_SEC;
-        if (tgt.rv >= 1) { Object.assign(tgt, { down:false, hp:REVIVE_HP, sh:0, rv:0, inv:now+REVIVE_INV }); p.rvc = (p.rvc||0)+1; feed(`${p.name} が ${tgt.name} を蘇生`); }
+        if (tgt.rv >= 1) { Object.assign(tgt, { down:false, hp:REVIVE_HP, sh:0, rv:0, inv:now+REVIVE_INV }); p.rvc = (p.rvc||0)+1; feed(`${p.name} が ${tgt.name} を蘇生`, teamOf(p.slot)); }
         continue; } }
     if (inp.fire && p.cd <= 0 && !((p.inv||0) > now)) { p.cd = GUN.rate;
       if (!p.bot) engaged[teamOf(p.slot)] = now + ENGAGE_MS; // 人間が攻撃を始めた → 同じチームのBOTも撃ってよい
@@ -632,7 +632,12 @@ function botThink(p, dt){
   return { mx, my, ax, ay, fire, act };
 }
 let feeds = [];
-function feed(t){ feeds.push({ t, at:Date.now() }); state.feed = feeds.slice(-5); }
+// tm を付けた通知は、そのチームの人にだけ表示する（敵の蘇生は見せない）
+function feed(t, tm){ feeds.push(tm===undefined ? { t, at:Date.now() } : { t, at:Date.now(), tm }); state.feed = feeds.slice(-5); }
+// 蘇生ボタンは、近くにダウンした味方がいるときだけ出す
+function canRevive(){ const mp = state.players.find(p=>p.id===myId); if (!mp || !alive(mp)) return false;
+  const x = local ? local.x : mp.x, y = local ? local.y : mp.y;
+  return state.players.some(q=>q.down && !q.out && q!==mp && teamOf(q.slot)===teamOf(mp.slot) && Math.hypot((isHost?q.x:q.dx)-x, (isHost?q.y:q.dy)-y) < REVIVE_RANGE*1.6); }
 function broadcast(){
   const now = Date.now();
   const tp = state.tplace || {};
@@ -1107,7 +1112,7 @@ function draw(me){
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
-  if (matchMedia('(pointer:coarse)').matches) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
+  if (matchMedia('(pointer:coarse)').matches && (canRevive() || touch.act)) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
     ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center'; ctx.fillText('蘇生', b.x, b.y+5); }
   if (mp) { const bx=16+SAFE.l, by=H-50-SAFE.b; ctx.fillStyle='#000a'; ctx.fillRect(bx-4,by-4,228,40); ctx.textAlign='left'; ctx.font='bold 11px sans-serif';
     if (mp.down) { ctx.fillStyle='#e55'; ctx.fillRect(bx,by,220*mp.dhp/DOWN_HP,12); ctx.fillStyle='#6cf'; ctx.fillRect(bx,by+18,220*mp.dsh/DOWN_SHIELD,12);
@@ -1118,9 +1123,9 @@ function draw(me){
     else { ctx.fillStyle='#fff'; ctx.font='bold 13px sans-serif'; ctx.fillText('脱落しました（味方を観戦中）', bx+4, by+20); } }
   const left = Math.max(0, MATCH_SEC - Math.floor((Date.now()+clockOffset-state.startAt)/1000));
   $('timer').innerHTML = `${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}${zn?`<div class="ztxt${zn.shrinking||zn.gone?' warn':''}">${zn.txt}</div>`:''}`;
-  const humans = state.players.filter(p=>!p.bot).length, nT = new Set(state.players.filter(p=>!p.out).map(p=>teamOf(p.slot))).size;
-  $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>人間 ${humans}人・BOT ${state.players.length-humans}人<br>残り ${nT}チーム${mp?`｜キル ${mp.kills}`:''}`;
-  $('feed').innerHTML = (state.feed||[]).filter(f=>Date.now()+(isHost?0:clockOffset)-f.at<6000).map(f=>`<div>${esc(f.t)}</div>`).join('');
+  const nLeft = state.players.filter(p=>!p.out).length;
+  $('hud').innerHTML = `部屋 ${roomCode}｜${isHost?'ホスト':'参加者'}<br>残り ${nLeft}人${mp?`｜キル ${mp.kills}`:''}`;
+  $('feed').innerHTML = (state.feed||[]).filter(f=>Date.now()+(isHost?0:clockOffset)-f.at<6000 && (f.tm===undefined || (mp && f.tm===teamOf(mp.slot)))).map(f=>`<div>${esc(f.t)}</div>`).join('');
   if (state.phase==='end' && $('result').style.display!=='flex') { $('result').style.display='flex'; renderResult(mp);
     $('btnLobby').style.display=isHost?'block':'none'; $('resWait').style.display=isHost?'none':'block'; }
 }
