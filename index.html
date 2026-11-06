@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.10<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.11<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -523,6 +523,9 @@ function losClear(a,b){ const n = Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/20); for
 // ===== 入力（自分） =====
 const keys = {}; let mouse = { x:0, y:0, down:false, used:false };
 const touch = { move:null, aim:null, act:null };
+// コントローラーを使っている間はスマホ用のボタンを出さない（画面に触れたら戻す）
+let padMode = false; addEventListener('gamepadconnected', () => { padMode = true; });
+const touchUI = () => matchMedia('(pointer:coarse)').matches && !padMode;
 const SAFE = { t:0, r:0, b:0, l:0 }; // ノッチなどで隠れる端の幅
 const actBtn = () => ({ x:innerWidth-80-SAFE.r, y:innerHeight-(innerWidth>innerHeight?120:170)-SAFE.b, r:38 }); // 横画面では少し下に
 // スマホのボタン（蘇生の近くに並べる）：武器切替・リロード・魔法の範囲攻撃モード
@@ -555,7 +558,7 @@ let wheelAt = 0; addEventListener('wheel', e => { const n=performance.now(); if 
 addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; mouseAt=performance.now(); });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; if(e.button===2) mouse.rdown=true; }); addEventListener('mouseup', e => { if(e.button===2) mouse.rdown=false; else mouse.down=false; });
 addEventListener('contextmenu', e => { if (state.phase==='match') e.preventDefault(); }); // 右クリック＝構え
-function tStart(e){ for (const t of e.changedTouches) { const b=actBtn();
+function tStart(e){ padMode = false; for (const t of e.changedTouches) { const b=actBtn();
     if (mapOpen) { toggleMap(); continue; }
     if ((canRevive() || curTarget) && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
@@ -581,6 +584,7 @@ function readInput(me){
   if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; aiming = mouse.down || performance.now()-mouseAt < 600; }
   const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g);
   if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]); let rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
+    if (!padMode && (lx||ly||rx||ry||gp.buttons.some(b=>b&&b.pressed))) padMode = true;
     const pr = i => !!(gp.buttons[i]&&gp.buttons[i].pressed), edge = i => pr(i) && !gpPrev[i];
     // スタート：押してすぐ離す＝持ち物／長押し＝設定。セレクト（ビュー）：大きなマップ
     const n = performance.now();
@@ -1800,14 +1804,14 @@ function draw(me){
   for (const k of ['move','aim']) { const t=touch[k]; if(!t) continue;
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(t.ox,t.oy,60,0,Math.PI*2); ctx.stroke();
     const s=stickOf(t); ctx.fillStyle='rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(t.ox+s.x*60,t.oy+s.y*60,24,0,Math.PI*2); ctx.fill(); }
-  const coarse = matchMedia('(pointer:coarse)').matches, rvOK = canRevive();
+  const coarse = touchUI(), rvOK = canRevive();
   if (coarse && (rvOK || curTarget || touch.act)) { const b=actBtn(); ctx.fillStyle=touch.act?'rgba(90,255,140,.5)':'rgba(255,255,255,.18)';
     ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center';
     ctx.fillText(rvOK ? '蘇生' : curTarget ? ACT_LABEL[curTarget.k] : '', b.x, b.y+5); holdRing(b.x, b.y, b.r+4); }
   if (mp && alive(mp) && curTarget && !rvOK && !boxOpen) drawPrompt(mp, W, H, coarse);
   if (mp && alive(mp)) drawHealBar(mp, W, H);
   if (ring.open && mp && mp.bag) drawRing(mp, W, H);
-  if (matchMedia('(pointer:coarse)').matches && state.phase==='match' && mp && alive(mp)) for (const b of touchBtns()) {
+  if (coarse && state.phase==='match' && mp && alive(mp)) for (const b of touchBtns()) {
     const lit = touch.flash && touch.flash.k===b.k && performance.now()-touch.flash.at < 150;
     ctx.fillStyle = lit ? 'rgba(255,226,138,.5)' : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
     ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.fillText(b.label, b.x, b.y+4); }
