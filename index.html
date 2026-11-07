@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.4<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.5<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1323,10 +1323,14 @@ function sendHero(){ fixPrefs(); if (isHost) { const me = state.players.find(p=>
   else if (hostConn && hostConn.open) hostConn.send({ t:'hero', h1:myHero, pr:myPrefs }); }
 function renderPrefs(){ fixPrefs(); $('prefRow').innerHTML = [1,2,3,4].map(i=>`<select data-i="${i}">${HIDS.filter(h=>h!==myHero).map(h=>`<option value="${h}"${myPrefs[i]===h?' selected':''}>${i+1}. ${HEROES[h].name}</option>`).join('')}</select>`).join(''); }
 $('prefRow').onchange = e => { const el = e.target, i = +el.dataset.i, v = el.value, j = myPrefs.indexOf(v); if (j > 0) [myPrefs[i], myPrefs[j]] = [myPrefs[j], myPrefs[i]]; renderPrefs(); sendHero(); };
-function renderHeroSel(){ fixPrefs(); renderPrefs();
+// 画面を作り直しても、コントローラーのカーソルは同じボタンに残す
+const focusKey = () => mnu && mnu.foc ? (mnu.foc.dataset.h ? '[data-h="'+mnu.foc.dataset.h+'"]' : mnu.foc.dataset.i ? 'select[data-i="'+mnu.foc.dataset.i+'"]' : mnu.foc.id ? '#'+mnu.foc.id : null) : null;
+function keepFocus(k){ if (!mnu || !mnu.foc || document.body.contains(mnu.foc)) return; const e = k && document.querySelector(k); menuFocus(e || null); }
+function renderHeroSel(){ const fk = focusKey(); fixPrefs(); renderPrefs();
   $('heroSel').innerHTML = HIDS.map(k=>`<button data-h="${k}" class="${k===myHero?'on':''}"><b style="color:${HEROES[k].col}">${HEROES[k].name}</b>${HEROES[k].role}</button>`).join('');
   const h = HEROES[myHero];
   $('heroInfo').innerHTML = `<b>パッシブ「${h.p[0]}」</b> ${h.p[1]}<br><b>キュー「${h.q[0]}」</b> ${h.q[1]}（CT${h.q[2]}秒）<br><b>ウルト「${h.u[0]}」</b> ${h.u[1]}（CT${h.u[2]}秒）<br>※同じチームで重なったら、使う人はランダムで決まります`;
+  keepFocus(fk);
 }
 $('heroSel').onclick = e => { const b = e.target.closest('button'); if (!b) return; myHero = b.dataset.h; renderHeroSel(); sendHero(); };
 renderHeroSel();
@@ -2274,7 +2278,7 @@ function renderResult(mp){
 // 十字キー／左スティック上下：選ぶ　A：決定　左右：選択肢を変える　B：文字入力をやめる
 // 文字入力（名前・部屋コード）：Aで入力モード → 上下で文字を変える・左右で位置を移す・A/Bで終わる
 const PAD_CH = { codeIn:'ABCDEFGHJKLMNPQRSTUVWXYZ', name:' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンー' };
-const mnu = { prev:[], rep:{}, foc:null, edit:null, ci:0 };
+var mnu = { prev:[], rep:{}, foc:null, edit:null, ci:0 }; // var：ロビーの描画が先に呼ぶため
 function menuItems(){
   const root = $('pre').style.display==='flex' ? $('pre') : $('result').style.display==='flex' ? $('result') : $('lobby').style.display!=='none' && $('game').style.display!=='block' ? $('lobby') : null;
   if (!root) return [];
@@ -2337,7 +2341,7 @@ function renderPre(){ const me = meP(); if (!me) return; const tm = teamOf(me.sl
   if (ph==='pick') {
     const key = 'pick|' + myHero + '|' + allies.map(p=>p.id+p.h1+p.lc).join(',');
     if (key === preKey) return; preKey = key;
-    const h = HEROES[myHero];
+    const h = HEROES[myHero], fk = focusKey();
     $('preBody').innerHTML = `<div class="card"><div class="hsel" id="pickSel">${HIDS.map(k=>`<button data-h="${k}" class="${k===myHero?'on':''}"><b style="color:${HEROES[k].col}">${HEROES[k].name}</b>${HEROES[k].role}</button>`).join('')}</div>
       <div id="heroInfo"><b>パッシブ「${h.p[0]}」</b> ${h.p[1]}<br><b>キュー「${h.q[0]}」</b> ${h.q[1]}<br><b>ウルト「${h.u[0]}」</b> ${h.u[1]}</div>
       <div class="sub" style="margin:6px 0 0">第2〜第5候補：${myPrefs.slice(1).map(k=>HEROES[k].name).join('→')}</div>
@@ -2346,7 +2350,7 @@ function renderPre(){ const me = meP(); if (!me) return; const tm = teamOf(me.sl
       <div class="sub">同じヒーローが重なったら、使う人はランダム。使えなかった人は第2候補から順に決まります</div></div>`;
     $('pickSel').onclick = e => { const b = e.target.closest('button'); if (!b) return; myHero = b.dataset.h; sendHero(); };
     $('lcBtn').onclick = () => { me.lc = !me.lc; if (isHost) broadcast(); else if (hostConn && hostConn.open) hostConn.send({ t:'lc', v:me.lc }); preKey = ''; };
-    if (mnu.foc && !document.body.contains(mnu.foc)) menuFocus(null);
+    keepFocus(fk);
     return; }
   // 出撃地点の予約
   const L0 = leaderOf(tm), info = isLd(me) ? 'あなたはリーダーです。出撃の基準地点を選んでください（ほかのチームの近くは選べません）'
