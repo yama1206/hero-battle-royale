@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.2<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -167,7 +167,7 @@ const DODGE_SPD = 600, DODGE_T = .25, DODGE_CD = 3; // 回避の速さ・時間�
 // ===== ヒーロー（仕様6）。基本ステータスは共通、能力だけが違う。段階8.3でウルトまで動く =====
 const HEROES = {
   raven: { name:'レイヴン', role:'索敵・探索', col:'#7c8cff',
-    p:['気配察知','敵の足音・銃声を25%遠くから察知し、方向を表示（壁越しも）'], q:['索敵パルス','半径300の敵を3秒探知',20], u:['ゴーストアイ','10秒間 広範囲の敵を探知',120] },
+    p:['気配察知','敵の足音・銃声を25%遠くから察知し、方向を表示（壁越しも）'], q:['索敵パルス','半径600の敵を3秒探知',20], u:['ゴーストアイ','10秒間 広範囲の敵を探知',120] },
   blaze: { name:'ブレイズ', role:'攻撃', col:'#ff6a3d',
     p:['戦闘本能','敵をダウンさせると5秒間リロード速度+20%'], q:['フラッシュグレネード','半径108の敵を2秒目くらまし',25], u:['デッドリーラッシュ','12秒間 攻撃力・連射・リロード強化',120] },
   sonia: { name:'ソニア', role:'機動力', col:'#3ddc97',
@@ -186,7 +186,7 @@ const HEAR_SHOT = 1100, HEAR_STEP = 330, RAVEN_HEAR = 1.25; // 仮：銃声・�
 const snOf = p => p.sn !== undefined && !isHost ? p.sn : Date.now()-(p.lastShot||0) < 250 ? 2 : (p.mvAmt||0) > 0.5 && !p.down ? 1 : 0; // 銃声2・足音1
 const bzOf = p => !isHost ? p.bz : (p.bzUntil||0) > Date.now() ? 1 : 0;
 // キュー（段階8.2）。距離は仕様の約0.6倍。仮の値
-const PULSE_R = 300, PULSE_T = 3000;                 // レイヴン：索敵パルス
+const PULSE_R = 600, PULSE_T = 3000;                 // レイヴン：索敵パルス
 const NADE_THROW = 300, NADE_FLY = 450, NADE_FUSE = 600, FLASH_R = 108, BLIND_T = 2000, FLASH_FOV = Math.cos(80*Math.PI/180); // ブレイズ：フラッシュグレネード（投げる距離300・着地0.45秒・爆発まで0.6秒は仮）
 const BOOST_DIST = 210, BOOST_T = 0.7;               // ソニア：ブーストダッシュ（走る速さに上乗せ）
 const FIELD_R = 108, FIELD_T = 6000, FIELD_HP = 5, FIELD_MAX = 30; // メディ：ヒールフィールド
