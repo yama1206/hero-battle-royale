@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.4<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -842,7 +842,7 @@ function hostTick(dt){
   if (state.phase !== 'match') return;
   const el = (now-state.startAt)/1000, zn = zoneAt(el);
   for (const p of state.players) {
-    if (p.out) continue;
+    sortBag(p); if (p.out) continue;
     let inp = p.id===myId ? local : p.bot ? botThink(p, dt) : inputs[p.id];
     if (!inp) continue;
     // 回避（人間は押した回数で受け取る）：0.25秒無敵・攻撃できない・回復は取り消し。リロードは続く
@@ -1038,6 +1038,10 @@ function supplyDrop(zn){ const z = zn && !zn.gone ? (zn.next || zn) : { x:MAP/2,
   feed('補給物資が投下された（ミニマップの青い印）'); }
 // 持ち物（8枠）。同じ種類はまとまる。パーツは1枠に1個
 const bagN = (p, c) => { let n = 0; for (const b of p.bag||[]) if (b && b.c===c) n += b.n; return n; };
+// 持ち物は自動で並べる：左上から 弾 → 回復 → それ以外 → 空き（同じ種類の中は今の順のまま）
+const BAG_ORDER = { as:0, al:1, m1:10, m2:11, s1:12, s2:13 };
+const bagRank = b => !b ? 99 : b.c in BAG_ORDER ? BAG_ORDER[b.c] : 50;
+function sortBag(p){ const b = p.bag; if (!b) return; for (let i=1;i<b.length;i++) if (bagRank(b[i-1]) > bagRank(b[i])) { const s = b.map((x,j)=>[x,j]).sort((x,y)=>bagRank(x[0])-bagRank(y[0]) || x[1]-y[1]).map(x=>x[0]); for (let j=0;j<b.length;j++) b[j] = s[j]; return; } }
 function bagAdd(p, it){ // 入った数を返す
   const bag = p.bag; if (!bag) return 0;
   if (it.c==='p') { const i = bag.findIndex(b=>!b); if (i < 0) return 0; bag[i] = { c:'p', n:1, pk:it.pk, r:it.r }; return 1; }
