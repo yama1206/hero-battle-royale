@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.1<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.2<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1174,7 +1174,10 @@ function eliminate(p, why){ if (p.out) return; p.out=true; p.down=false; p.life 
 // ===== BOT（段階10） =====
 // 自分の画面に見えている範囲（中心からの半分の幅・高さ、世界の大きさで）
 const myView = () => ({ w:Math.round(innerWidth/ZOOM/2), h:Math.round(innerHeight/ZOOM/2) });
-// BOTは、相手（人間）の画面に自分が映っているときだけ撃つ
+// 視野：高い障害物の裏は見えない（人間は画面の範囲、BOTは BOT_VIEW まで）
+const BOT_VIEW = 800; // BOTが敵に気づける距離（仮）
+const botSees = (p, q) => Math.hypot(q.x-p.x, q.y-p.y) < BOT_VIEW && losClear(p, q);
+// （旧）相手の画面に映っているか。今は使っていない
 function seenBy(q, p){ if (q.bot) return true; const v = q.id===myId ? myView() : (inputs[q.id]&&inputs[q.id].vw ? {w:inputs[q.id].vw,h:inputs[q.id].vh} : {w:300,h:300});
   return Math.abs(p.x-q.x) < v.w-20 && Math.abs(p.y-q.y) < v.h-20; }
 // BOTの武器選び：その距離でどれだけ使えるか（大きいほど良い）。弾がない武器は使わない
@@ -1258,11 +1261,11 @@ function botThink(p, dt){
     // 見えている敵だけ狙う（壁越しは追わない）。味方と同じ敵・味方を撃っている敵を優先。ダウンした敵は後回し
     let tgt = null, best = 1e9; const reach = Math.max(200, botReach(p)*P.reach), mateT = new Set(mates.map(q=>q.tgt).filter(Boolean));
     for (const q of state.players) { if (q.out || teamOf(q.slot)===myTeam) continue; const d = Math.hypot(q.x-p.x, q.y-p.y);
-      if (d > reach || !seenBy(q,p) || !losClear(p,q)) continue;
+      if (d > reach || !botSees(p,q)) continue;
       let s = d; if (mateT.has(q.id)) s -= 150; if (mates.some(m=>m.lastHitBy===q.id && now-(m.hitAt||0) < 3000)) s -= 120; if (q.down) s += 150; if (q.id===p.tgt) s -= 60;
       if (s < best) { best = s; tgt = q; } }
     if (p.lastHitBy && now-(p.hitAt||0) < 2000) { const q = byId(p.lastHitBy);
-      if (q && !q.out && seenBy(q,p) && losClear(p,q)) tgt = q; else if (q && !q.out) p.alrt = { x:q.x+(Math.random()-.5)*200, y:q.y+(Math.random()-.5)*200, until:now+4000 }; } // 見えない敵に撃たれた → だいたいの方向を警戒
+      if (q && !q.out && botSees(p,q)) tgt = q; else if (q && !q.out) p.alrt = { x:q.x+(Math.random()-.5)*200, y:q.y+(Math.random()-.5)*200, until:now+4000 }; } // 見えない敵に撃たれた → だいたいの方向を警戒
     // 攻撃開始ルール：人間がいるチームのBOTは、許可が出るまで撃たない
     const mayShoot = !humanTeam || (engaged[myTeam]||0) > now, nt = tgt && mayShoot ? tgt.id : null;
     if (nt && now - (p.saw[nt]||0) > 2000) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y); p.rxAt = now + D.react*(d < 150 ? 0.5 : 1)*(0.8+Math.random()*0.4)*1000; } // 反応時間（近いと速い）
@@ -1319,7 +1322,7 @@ function botThink(p, dt){
   let ax=p.ax, ay=p.ay, fire=false, act=false, pn=false, doQ=false, doU=false;
   if (rev && rd < REVIVE_RANGE && !run && !cov && !(tgt && now - (p.hitAt||0) < 800)) act = true; // 蘇生中に撃たれたら中断
   let doSw = false, doRl = false;
-  if (!act && tgt && seenBy(tgt,p)) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y)||1, w = wOf(p), ux = (tgt.x-p.x)/d, uy = (tgt.y-p.y)/d;
+  if (!act && tgt && botSees(p,tgt)) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y)||1, w = wOf(p), ux = (tgt.x-p.x)/d, uy = (tgt.y-p.y)/d;
     // 距離に合った武器へ持ち替える（近い敵には剣、遠い敵には射程の長い武器）
     if (now > (p.botSwAt||0) && botScore(p, p.wp[4]^1, d) > botScore(p, p.wp[4], d) + 0.5) { doSw = true; p.botSwAt = now + 1500; }
     // 戦いながらの動き：武器に合った距離を保ち、横へ動く（上級・戦術型はよく動く）
@@ -1907,6 +1910,15 @@ function draw(me){
   const objs = hQuery(M.hash, cx-120, cy-40, cx+W+120, cy+H+380);
   const decs = hQuery(M.dhash, cx-120, cy-40, cx+W+120, cy+H+380);
   const list = objs.map(o => ({ k:o.y+o.h, o })).concat(decs.map(d => ({ k:d.key, d })));
+  // 視界：高い障害物の裏を暗くする（地面と物資だけ。建物はこの上に描く）
+  const eye = mp && state.phase==='match' ? cam : null;
+  if (eye) { ctx.beginPath(); const FAR = 4000;
+    for (const o of objs) { if (o.low || !o.w || !o.h) continue; const c = [[o.x,o.y],[o.x+o.w,o.y],[o.x+o.w,o.y+o.h],[o.x,o.y+o.h]];
+      for (let i=0;i<4;i++) { const a = c[i], b = c[(i+1)%4], da = Math.hypot(a[0]-eye.x, a[1]-eye.y)||1, db = Math.hypot(b[0]-eye.x, b[1]-eye.y)||1;
+        const q = [a, b, [b[0]+(b[0]-eye.x)/db*FAR, b[1]+(b[1]-eye.y)/db*FAR], [a[0]+(a[0]-eye.x)/da*FAR, a[1]+(a[1]-eye.y)/da*FAR]];
+        let ar = 0; for (let j=0;j<4;j++) { const u = q[j], w = q[(j+1)%4]; ar += u[0]*w[1]-w[0]*u[1]; } if (ar < 0) q.reverse(); // 向きをそろえて、重なっても濃くならないように
+        ctx.moveTo(q[0][0], q[0][1]); for (let j=1;j<4;j++) ctx.lineTo(q[j][0], q[j][1]); ctx.closePath(); } }
+    ctx.fillStyle = 'rgba(6,10,22,.5)'; ctx.fill('nonzero'); }
   const vis = [];
   for (const p of state.players) {
     if (p.out) continue;
@@ -1916,7 +1928,8 @@ function draw(me){
     const moved = Math.hypot(x-(p._lx??x), y-(p._ly??y)); p._lx=x; p._ly=y;
     p._walk = (p._walk||0) + moved*0.12;
     const v = { p, x, y, ax, ay, fx, fy, mine, ally: teamOf(p.slot)===myTeam, moving: moved>0.3 };
-    vis.push(v); list.push({ k:y, v });
+    v.seen = mine || v.ally || !eye || losClear(eye, { x, y }); // 壁の裏の敵は見えない
+    vis.push(v); if (v.seen) list.push({ k:y, v });
   }
   list.sort((a,b)=>a.k-b.k);
   for (const it of list) { if (it.o) drawObj(it.o,t); else if (it.d) drawDeco(it.d,t); else drawPlayer(it.v); }
@@ -1940,16 +1953,16 @@ function draw(me){
   // 建物・木・屋根の裏に隠れているか（裏にいる人はシルエットで見せる）
   const hidden = v => { const x0=v.x-10, x1=v.x+10, y0=v.y-SPRITE_H*CHAR_SCALE, y1=v.y;
     return occ.some(o => (o.ht!==undefined && o.k ? o.y+o.h > v.y : true) && x1>o.ib[0] && x0<o.ib[0]+o.ib[2] && y1>o.ib[1] && y0<o.ib[1]+o.ib[3]); };
-  for (const v of vis) { v.hid = hidden(v); if (v.hid) { // 裏にいる人はシルエットで見せる（味方は緑、敵は赤）
+  for (const v of vis) { if (!v.seen) continue; v.hid = hidden(v); if (v.hid) { // 裏にいる人はシルエットで見せる（味方は緑、敵は赤）
       ctx.save(); ctx.globalAlpha=0.5; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, (v.mine || v.ally) ? true : '#ff8a8a', v.fx, v.fy); ctx.restore(); } }
   // 索敵で見つけた敵：赤い輪（壁越しでも）
   if (mp) for (const v of vis) if (!v.ally && spotted(v.p, myTeam)) { ctx.save(); ctx.strokeStyle='rgba(255,80,80,.95)'; ctx.lineWidth=3; ctx.beginPath(); ctx.ellipse(v.x, v.y, 20, 9, 0, 0, Math.PI*2); ctx.stroke();
-    if (v.hid) { ctx.globalAlpha=.85; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, '#ff5050', v.fx, v.fy); } ctx.restore(); }
+    if (v.hid || !v.seen) { ctx.globalAlpha=.85; drawHero(v.x, v.y, v.ax, v.ay, v.p, 0, v.p.down, '#ff5050', v.fx, v.fy); } ctx.restore(); }
   // 弾（体の高さ）
   for (const b of state.bullets){ ctx.fillStyle = b.k===1 ? '#d9a2ff' : '#ffe28a'; ctx.beginPath(); ctx.arc(b.x,b.y-BODY_H,b.k===1?4:2.5,0,Math.PI*2); ctx.fill(); }
   drawFx();
   // 名前・体力（いちばん上に）
-  for (const v of vis) drawLabel(v);
+  for (const v of vis) if (v.seen) drawLabel(v);
   ctx.restore(); W=innerWidth; H=innerHeight; // ここから画面のUI
   // いまいるエリアの名前
   const ar = areaAt(cam.x, cam.y);
