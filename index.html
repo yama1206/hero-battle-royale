@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.5<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.6<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1045,7 +1045,7 @@ function sortBag(p){ const b = p.bag; if (!b) return; for (let i=1;i<b.length;i+
 function bagAdd(p, it){ // 入った数を返す
   const bag = p.bag; if (!bag) return 0;
   if (it.c==='p') { const i = bag.findIndex(b=>!b); if (i < 0) return 0; bag[i] = { c:'p', n:1, pk:it.pk, r:it.r }; return 1; }
-  const S = ITEMS[it.c].stack, max = Infinity; // 回復アイテムも合計の上限なし（持ち物の枠が空いていれば持てる） let left = Math.max(0, Math.min(it.n, max - bagN(p, it.c))); const n0 = left;
+  const S = ITEMS[it.c].stack, max = Infinity; /* 回復アイテムも合計の上限なし（持ち物の枠が空いていれば持てる） */ let left = Math.max(0, Math.min(it.n, max - bagN(p, it.c))); const n0 = left;
   for (const b of bag) if (left > 0 && b && b.c===it.c && b.n < S) { const k = Math.min(left, S-b.n); b.n += k; left -= k; }
   for (let i=0; i<bag.length && left>0; i++) if (!bag[i]) { const k = Math.min(left, S); bag[i] = { c:it.c, n:k }; left -= k; }
   return n0 - left; }
