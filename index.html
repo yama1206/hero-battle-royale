@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.6<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.0<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -764,7 +764,7 @@ function hostBeginMatch(){
       const s = ok ? p.res : freeSpot(b.x, b.y, SPAWN_ALLY_R*0.7); p.x = s.x; p.y = s.y; } }
   state.players.forEach(p => {
     Object.assign(p, { skin:p.skin||'default', ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, rv:0, dhp:0, dsh:0, wp:null, bwp:null,
-      kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0, qCd:0, uCd:0, drUntil:0, phUntil:0, spot:null, blindUntil:0, bdUntil:0, bzUntil:0, dgCd:0 }); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
+      kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0, qCd:0, uCd:0, drUntil:0, phUntil:0, spot:null, blindUntil:0, bdUntil:0, bzUntil:0, dgCd:0 }); if (p.bot) botInit(p); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
   for (const k in engaged) delete engaged[k];
   state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ab = { nades:[], fields:[], walls:[], eyes:[], domes:[] }; state.ev = []; state.drops = []; spawnLoot();
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
@@ -792,7 +792,7 @@ function cueStep(p, inp, now){
   else if (p.hero==='blaze') { let x = p.x, y = p.y; const n = NADE_THROW/10; // 壁に当たったら、その手前に落ちる
     for (let i=1; i<=n; i++) { const nx = p.x+p.ax*i*10, ny = p.y+p.ay*i*10; if (inObs(nx, ny) || nx<0||ny<0||nx>MAP||ny>MAP) break; x = nx; y = ny; }
     A.nades.push({ x0:Math.round(p.x), y0:Math.round(p.y), x:Math.round(x), y:Math.round(y), t0:now, land:now+NADE_FLY, at:now+NADE_FLY+NADE_FUSE, tm }); }
-  else if (p.hero==='sonia') p.bdUntil = now + BOOST_T*1000; // 移動は本人の端末（BOTの使い方は段階10で）
+  else if (p.hero==='sonia') p.bdUntil = now + BOOST_T*1000; // 移動は本人の端末（BOTはホストで p.bbd の向きへ）
   else if (p.hero==='medi') A.fields.push({ x:Math.round(p.x), y:Math.round(p.y), r:FIELD_R, until:now+FIELD_T, tm, acc:0, got:{} });
   else if (p.hero==='aegis') { const a = Math.hypot(p.ax, p.ay)||1, ux = p.ax/a, uy = p.ay/a, cx = p.x+ux*BARRIER_D, cy = p.y+uy*BARRIER_D, hw = BARRIER_W/2;
     A.walls.push({ x1:Math.round(cx-uy*hw), y1:Math.round(cy+ux*hw), x2:Math.round(cx+uy*hw), y2:Math.round(cy-ux*hw), hp:BARRIER_HP, until:now+BARRIER_T }); }
@@ -855,7 +855,9 @@ function hostTick(dt){
     p.dash = !!inp.dash && !p.down; p.ads = !!inp.ads && !p.down;
     const sp = p.down ? CRAWL : SPEED*moveMul(p, inp.fire && !p.down);
     const ox = p.x, oy = p.y;
-    if (p.bot) { p.x += inp.mx*sp*dt; p.y += inp.my*sp*dt; pushOut(p, ox, oy); }
+    if (p.bot) { let vx = inp.mx*sp, vy = inp.my*sp; // BOTの回避・ブーストダッシュはホストで動かす
+      if (dodging && p.bdg) { vx = p.bdg.x*DODGE_SPD; vy = p.bdg.y*DODGE_SPD; } else if (now < (p.bdUntil||0) && p.bbd) { const s2 = SPEED*DASH_MUL + BOOST_DIST/BOOST_T; vx = p.bbd.x*s2; vy = p.bbd.y*s2; }
+      p.x += vx*dt; p.y += vy*dt; pushOut(p, ox, oy, now < (p.dgUntil||0) + (VAULT_EXT+.15)*1000); }
     else if (inp.x!==undefined) {
       const dx=inp.x-p.x, dy=inp.y-p.y, d=Math.hypot(dx,dy), lim=(p.down?CRAWL:SPEED)*0.5+20;
       if (d<=lim){ p.x=inp.x; p.y=inp.y; } else { p.x+=dx/d*lim; p.y+=dy/d*lim; } pushOut(p, ox, oy, now < (p.dgUntil||0) + (VAULT_EXT+.15)*1000); } // 回避中は低い障害物を越えられる
@@ -1169,20 +1171,20 @@ function eliminate(p, why){ if (p.out) return; p.out=true; p.down=false; p.life 
   const k = byId(p.downBy); if (k && teamOf(k.slot)!==teamOf(p.slot)) k.kills++; makeBox(p);
   feed(`${p.name} 脱落（${why}）`); }
 
-// BOT（仮）
+// ===== BOT（段階10） =====
 // 自分の画面に見えている範囲（中心からの半分の幅・高さ、世界の大きさで）
 const myView = () => ({ w:Math.round(innerWidth/ZOOM/2), h:Math.round(innerHeight/ZOOM/2) });
 // BOTは、相手（人間）の画面に自分が映っているときだけ撃つ
 function seenBy(q, p){ if (q.bot) return true; const v = q.id===myId ? myView() : (inputs[q.id]&&inputs[q.id].vw ? {w:inputs[q.id].vw,h:inputs[q.id].vh} : {w:300,h:300});
   return Math.abs(p.x-q.x) < v.w-20 && Math.abs(p.y-q.y) < v.h-20; }
-// BOTの武器選び：その距離でどれだけ使えるか（大きいほど良い）
+// BOTの武器選び：その距離でどれだけ使えるか（大きいほど良い）。弾がない武器は使わない
 function botScore(p, slot, d){ const w = wAt(p, slot); if (!w) return -1;
   if (w.melee) return bagN(p,'st') > 0 ? (d < 70 ? 3 : 0) : -1;
   if (w.ammo && p.wp[slot*2+1] + bagN(p, ammoCode(w)) <= 0) return -1;
   if (d > w.max) return 0; return d <= w.eff ? 2 + w.dmg*w.rate/200 : 1; }
 const botReach = p => { let r = 0; for (const s of [0,1]) { const w = wAt(p, s); if (!w) continue; r = Math.max(r, w.melee ? 220 : w.max*0.9); } return r; }; // 剣だけなら近くの敵へ寄っていく
-// BOTの物資探し：要る物のうち、いちばん近いもの（チェストは武器・弾・回復が足りないとき）
-function botLoot(p){
+// BOTの物資探し：要る物のうち、いちばん近いもの（チェストは武器・弾・回復が足りないとき）。rad＝探す距離（性格で変わる）
+function botLoot(p, rad){
   const l = state.loot; if (!l) return null;
   const emptyW = p.wp[0] < 0 || p.wp[2] < 0, ws = [wAt(p,0), wAt(p,1)].filter(Boolean);
   const need = c => { if (c==='w') return emptyW;
@@ -1190,63 +1192,148 @@ function botLoot(p){
     if (c==='st') return ws.some(w=>w.melee) && bagN(p,'st') < 3;
     return !!(ITEMS[c] && ITEMS[c].time) && bagN(p,c) < ITEMS[c].stack; };
   const meds = bagN(p,'m1')+bagN(p,'m2')+bagN(p,'s1')+bagN(p,'s2');
-  let best = null, bd = 1400;
-  if (emptyW || meds < 2 || need('as') || need('al')) for (const c of l.chests) if (!c.op) { const d = Math.hypot(c.x-p.x, c.y-p.y); if (d < bd) { bd = d; best = { x:c.x, y:c.y+16, o:c, k:'chest' }; } }
+  let best = null, bd = rad || 1400;
+  if (emptyW || meds < 2 || need('as') || need('al')) for (const c of l.chests) if (!c.op) { const d = Math.hypot(c.x-p.x, c.y-p.y)*(0.85+((c.x*7+c.y*3+p.slot*13)%30)/100); if (d < bd) { bd = d; best = { x:c.x, y:c.y+16, o:c, k:'chest' }; } } // 好みに少しばらつき
   for (const it of l.items) if (it.c!=='p' && it.own!==p.id && Math.abs(it.x-p.x) < bd && Math.abs(it.y-p.y) < bd && need(it.c)) { const d = Math.hypot(it.x-p.x, it.y-p.y)*0.8; if (d < bd) { bd = d; best = { x:it.x, y:it.y, o:it, k:'item' }; } }
   return best; }
+// 難易度（試合開始時にBOTごとにランダム。試合中は変えない）
+// react＝反応時間(秒)、aim＝照準誤差(度)、dodge＝回避判断の成功率、cover＝遮蔽物を使う度合い、abil＝キュー/ウルトを使う度合い（仮）
+const BOT_DF = [
+  { n:'初級', w:.40, react:1.2,  aim:25, dodge:.25, cover:.15, abil:.35 },
+  { n:'標準', w:.45, react:0.7,  aim:15, dodge:.45, cover:.5,  abil:.7 },
+  { n:'上級', w:.15, react:0.35, aim:8,  dodge:.65, cover:.85, abil:1 } ];
+// 性格（行動の傾向だけ。生存や安全地帯への移動の優先順位は変えない）。数値はすべて仮
+// retreat＝撤退するHP+シールド、reach＝戦う距離の倍率、loot＝物資を探す距離、gap＝人間の味方との距離、hunt＝銃声を調べに行く度合い
+const BOT_PS = {
+  aggr: { n:'攻撃的', retreat:40, reach:1.15, loot:1300, gap:80, hunt:1 },
+  caut: { n:'慎重',   retreat:95, reach:0.8,  loot:1200, gap:60, hunt:0 },
+  guard:{ n:'護衛型', retreat:65, reach:0.9,  loot:1000, gap:50, hunt:0 },
+  expl: { n:'探索型', retreat:65, reach:1,    loot:1900, gap:90, hunt:.5 },
+  tact: { n:'戦術型', retreat:70, reach:1,    loot:1400, gap:75, hunt:1 },
+  supp: { n:'支援型', retreat:70, reach:0.9,  loot:1300, gap:60, hunt:.3 } };
+function botInit(p){ let r = Math.random(); p.df = BOT_DF.findIndex(d => (r -= d.w) < 0); if (p.df < 0) p.df = 1;
+  const ks = Object.keys(BOT_PS); p.ps = ks[Math.random()*ks.length|0]; p.bdgc = 0; p.strf = 1; p.saw = {}; }
+// 自分に当たりそうな敵の弾（近い順でなく最初に見つけたもの）。当たらない弾には反応しない
+function botThreat(p, tm){ for (const b of state.bullets) { if (b.tm===tm || b.life<=0) continue;
+    const v = Math.hypot(b.vx,b.vy)||1, ux = b.vx/v, uy = b.vy/v, rx = p.x-b.x, ry = p.y-b.y, al = rx*ux+ry*uy; if (al < 0 || al > 280) continue;
+    const off = -rx*uy + ry*ux, s = off >= 0 ? 1 : -1; if (Math.abs(off) < R+8) return { b, nx:-uy*s, ny:ux*s }; } return null; }
+// 遮蔽物の陰：from から見えない、近くの空いている場所
+const clearAt = (x,y) => x>R && y>R && x<MAP-R && y<MAP-R && !inObs(x,y) && !inObs(x+R,y) && !inObs(x-R,y) && !inObs(x,y+R) && !inObs(x,y-R);
+function coverSpot(p, from, rad){ let best = null, bs = 1e9;
+  for (let i=0;i<12;i++) { const a = Math.random()*Math.PI*2, r = 30+Math.random()*rad, x = p.x+Math.cos(a)*r, y = p.y+Math.sin(a)*r;
+    if (!clearAt(x,y) || losClear(from, {x,y})) continue; const s = r - Math.hypot(x-from.x, y-from.y)*0.3; if (s < bs) { bs = s; best = { x, y }; } }
+  return best; }
+// キュー・ウルトを使うか（ヒーローごと）
+function botAbil(p, tgt, mates, D, now){ const h = p.hero, eff = p.hp+p.sh, d = tgt ? Math.hypot(tgt.x-p.x, tgt.y-p.y) : 1e9, w = wOf(p);
+  let q = false, u = false;
+  if (h==='raven') { q = !tgt && !!p.alrt; u = !!tgt && Math.random() < 0.2; }
+  else if (h==='blaze') { q = !!tgt && Math.abs(d - NADE_THROW) < FLASH_R*0.7; u = !!tgt && eff > 100 && d < 450; }
+  else if (h==='sonia') { q = !!tgt && ((p.retreat && d < 300) || (!!w && w.melee && d > 120 && d < 380)); u = !!tgt && (p.retreat || eff > 120); }
+  else if (h==='medi') { const hurt = [p, ...mates].filter(m=>alive(m) && m.hp < 70 && Math.hypot(m.x-p.x, m.y-p.y) < FIELD_R*0.8).length;
+    q = hurt >= 1 && (!tgt || d > 250); u = mates.some(m=>m.down && Math.hypot(m.x-p.x, m.y-p.y) < RECOVER_R-20) || (hurt >= 2 && !!tgt); }
+  else if (h==='aegis') { q = !!tgt && d < 500 && (p.retreat || !!p.revTgt || eff < 140); u = !!tgt && ((!!p.revTgt && d < 400) || eff < 80); }
+  p.bQ = q && now >= (p.qCd||0) && Math.random() < 0.4 + D.abil*0.6;
+  p.bU = u && now >= (p.uCd||0) && Math.random() < D.abil*0.5; }
+// 行動の優先順位：回避・生存 → 安全地帯 → 救助 → 戦闘・支援 → 補充 → 探索
 function botThink(p, dt){
-  const now = Date.now(), myTeam = teamOf(p.slot);
+  if (p.df === undefined) botInit(p);
+  const now = Date.now(), myTeam = teamOf(p.slot), D = BOT_DF[p.df], P = BOT_PS[p.ps];
   const mates = state.players.filter(q=>q!==p && teamOf(q.slot)===myTeam && !q.out);
   const humanMate = mates.find(q=>!q.bot && alive(q));
   const humanTeam = state.players.some(q=>teamOf(q.slot)===myTeam && !q.bot);
+  // 1. 回避：当たりそうな弾があれば、0.5秒に1回だけ判断。遮蔽物が近ければそちらへ逃げることもある
+  if (!p.down && now >= (p.dgNext||0)) { const th = botThreat(p, myTeam); if (th) { p.dgNext = now + 500;
+    if (Math.random() < D.dodge) { const c = Math.random() < D.cover*0.5 ? coverSpot(p, { x:th.b.x, y:th.b.y }, 90) : null;
+      if (c) p.cov = { x:c.x, y:c.y, until:now+1500 };
+      else if (now >= (p.dgCd||0) && now >= (p.dgUntil||0)) { p.bdg = { x:th.nx, y:th.ny }; p.bdgc++; } } } }
   p.th = (p.th||0) - dt;
-  if (p.th <= 0 || !p.bwp) { p.th = 0.3; // 判断は一定間隔で更新（行き先がまだないときもすぐ決める）
-    let tgt=null, bd=botReach(p);
-    for (const q of state.players) { if (q.out || teamOf(q.slot)===myTeam) continue;
-      const d=Math.hypot(q.x-p.x,q.y-p.y); if (d<bd && seenBy(q,p) && losClear(p,q)){ bd=d; tgt=q; } }
-    if (p.lastHitBy && now-p.hitAt<2000) { const q=state.players.find(x=>x.id===p.lastHitBy); if (q&&!q.out&&seenBy(q,p)) tgt=q; }
+  if (p.th <= 0 || !p.bwp) { p.th = p.tgt ? 0.25 : 0.5; // 戦っていないときは判断を少なめに
+    // 見えている敵だけ狙う（壁越しは追わない）。味方と同じ敵・味方を撃っている敵を優先。ダウンした敵は後回し
+    let tgt = null, best = 1e9; const reach = Math.max(200, botReach(p)*P.reach), mateT = new Set(mates.map(q=>q.tgt).filter(Boolean));
+    for (const q of state.players) { if (q.out || teamOf(q.slot)===myTeam) continue; const d = Math.hypot(q.x-p.x, q.y-p.y);
+      if (d > reach || !seenBy(q,p) || !losClear(p,q)) continue;
+      let s = d; if (mateT.has(q.id)) s -= 150; if (mates.some(m=>m.lastHitBy===q.id && now-(m.hitAt||0) < 3000)) s -= 120; if (q.down) s += 150; if (q.id===p.tgt) s -= 60;
+      if (s < best) { best = s; tgt = q; } }
+    if (p.lastHitBy && now-(p.hitAt||0) < 2000) { const q = byId(p.lastHitBy);
+      if (q && !q.out && seenBy(q,p) && losClear(p,q)) tgt = q; else if (q && !q.out) p.alrt = { x:q.x+(Math.random()-.5)*200, y:q.y+(Math.random()-.5)*200, until:now+4000 }; } // 見えない敵に撃たれた → だいたいの方向を警戒
     // 攻撃開始ルール：人間がいるチームのBOTは、許可が出るまで撃たない
-    const mayShoot = !humanTeam || (engaged[myTeam]||0) > now;
-    p.tgt = tgt && mayShoot ? tgt.id : null;
+    const mayShoot = !humanTeam || (engaged[myTeam]||0) > now, nt = tgt && mayShoot ? tgt.id : null;
+    if (nt && now - (p.saw[nt]||0) > 2000) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y); p.rxAt = now + D.react*(d < 150 ? 0.5 : 1)*(0.8+Math.random()*0.4)*1000; } // 反応時間（近いと速い）
+    if (nt) p.saw[nt] = now;
+    p.tgt = nt; if (!nt) tgt = null;
+    p.aimOff = (Math.random()-.5)*D.aim*Math.PI/180; // 照準誤差（判断のたびに変わる）
+    // 銃声を調べに行く（性格による）。レイヴンの探知で見えた敵も
+    if (!tgt && !humanMate && Math.random() < P.hunt) for (const b of state.bullets) { if (b.tm===myTeam) continue; const v = Math.hypot(b.vx,b.vy)||1, ox = b.x-b.vx/v*b.d, oy = b.y-b.vy/v*b.d;
+      if (Math.hypot(ox-p.x, oy-p.y) < 900) { p.alrt = { x:ox, y:oy, until:now+6000 }; break; } }
+    if (!tgt) for (const q of state.players) if (!q.out && teamOf(q.slot)!==myTeam && q.spot && q.spot[myTeam] > now && Math.hypot(q.x-p.x, q.y-p.y) < 1200) { p.alrt = { x:q.x, y:q.y, until:now+3000 }; break; }
+    if (p.alrt && (now > p.alrt.until || Math.hypot(p.alrt.x-p.x, p.alrt.y-p.y) < 60)) p.alrt = null;
+    // 3. 救助：人間の味方を先に。敵が近いときは無理をしない
     p.revTgt = null;
-    const dm = mates.find(q=>q.down);
-    if (dm && !p.down && (!tgt || Math.hypot(dm.x-p.x,dm.y-p.y) < 300)) p.revTgt = dm.id; // 味方の蘇生を優先
-    // 安全地帯へ向かう（優先順位2：救助・戦闘・探索より上）。目指すのは次の円（なければ今の円）
+    const dm = mates.filter(q=>q.down).sort((a,b)=>(a.bot-b.bot) || Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+    if (dm && !p.down) { const dd = Math.hypot(dm.x-p.x, dm.y-p.y), td = tgt ? Math.hypot(tgt.x-p.x, tgt.y-p.y) : 1e9;
+      if (!tgt || dd < REVIVE_RANGE || (td > 350 && dd < 300) || (!dm.bot && td > 220)) p.revTgt = dm.id; }
+    // 撤退：HP+シールドが少ないときは、遮蔽物の陰か敵から離れた場所へ
+    p.retreat = !!tgt && p.hp + p.sh < P.retreat && !p.down;
+    if (p.retreat && (!p.cov || now > p.cov.until)) { const c = Math.random() < D.cover+0.2 ? coverSpot(p, tgt, 220) : null, d = Math.hypot(tgt.x-p.x, tgt.y-p.y)||1;
+      p.cov = c ? { x:c.x, y:c.y, until:now+3000 } : Object.assign(freeSpot(p.x-(tgt.x-p.x)/d*250, p.y-(tgt.y-p.y)/d*250, 80), { until:now+2000 }); }
+    if (p.cov && now > p.cov.until) p.cov = null;
+    // 2. 安全地帯へ向かう。目指すのは次の円（なければ今の円）
     const zn = zoneAt(elapsedSec()), zt = zn && !zn.gone ? (zn.next || zn) : null;
     const inside = (c, pt, f) => Math.hypot(pt.x-c.x, pt.y-c.y) <= c.r*f;
     const toZone = () => { const d = Math.hypot(p.x-zt.x, p.y-zt.y)||1, k = zt.r*0.45/d; return freeSpot(zt.x+(p.x-zt.x)*Math.min(1,k), zt.y+(p.y-zt.y)*Math.min(1,k), 150); };
     p.zoneRun = !!zt && !inside(zt, p, 0.85) && (!humanMate || outOfZone(zn, p.x, p.y)); // 人間に付いているBOTは、場外のときだけ自分で戻る
     if (p.zoneRun && (!p.zwp || !inside(zt, p.zwp, 0.85))) p.zwp = toZone();
-    if (humanMate) { const a=p.slot*2.1; p.bwp = { x:humanMate.x+Math.cos(a)*70, y:humanMate.y+Math.sin(a)*70 }; } // 人間の味方に追従
-    else { // 近くをうろうろ。引っかかって動けなければ行き先を変える
+    // 追従：人間の味方 → BOTだけのチームはリーダー（いなければ番号の小さいBOT）にまとまって付いていく
+    const lead = humanMate ? null : [p, ...mates.filter(alive)].sort((a,b)=>(b.lead?1:0)-(a.lead?1:0) || a.slot-b.slot)[0];
+    const fol = humanMate || (lead !== p ? lead : null), gap = humanMate ? P.gap : 90;
+    if (fol) { const a = p.slot*2.1; p.bwp = { x:fol.x+Math.cos(a)*gap, y:fol.y+Math.sin(a)*gap }; }
+    else { // 探索：近くをうろうろ。引っかかって動けなければ行き先を変える
       p._st = (p._st||0) + 1; if (p._st >= 4) { p._st = 0; if (Math.hypot(p.x-(p._sx??p.x+99), p.y-(p._sy??p.y)) < 40) { p.bwp = null; p.zwp = null; } p._sx = p.x; p._sy = p.y; }
-      if (!p.bwp || Math.hypot(p.bwp.x-p.x,p.bwp.y-p.y)<40 || Math.random()<0.03) { p.bwp = freeSpot(p.x, p.y, 1200); if (zt && !inside(zt, p.bwp, 0.8)) p.bwp = toZone(); } }
-    // 物資：武器がない・弾や回復が少ないときは、近くのチェストや物を取りに行く（人間に付いているBOTは近くだけ）
-    if (!tgt && !p.zoneRun && !p.down) { const lt = botLoot(p);
-      if (lt && (!humanMate || Math.hypot(lt.x-humanMate.x, lt.y-humanMate.y) < 500)) { p.bwp = { x:lt.x, y:lt.y };
+      if (!p.bwp || Math.hypot(p.bwp.x-p.x,p.bwp.y-p.y)<40 || Math.random()<0.03) { p.bwp = freeSpot(p.x, p.y, P.loot*0.85); if (zt && !inside(zt, p.bwp, 0.8)) p.bwp = toZone(); } }
+    if (!tgt && p.alrt && !humanMate && !p.zoneRun) p.bwp = { x:p.alrt.x, y:p.alrt.y }; // 警戒：音のした方へ
+    // 5. 補充：武器がない・弾や回復が少ないときは、チェストや物を取りに行く（付いていく相手から離れすぎない）
+    if (!tgt && !p.zoneRun && !p.down) { const lt = botLoot(p, P.loot);
+      if (lt && (!fol || Math.hypot(lt.x-fol.x, lt.y-fol.y) < (humanMate ? 500 : 450))) { p.bwp = { x:lt.x, y:lt.y };
         if (lt.k==='chest' && Math.hypot(lt.o.x-p.x, lt.o.y-p.y) < PICK_R) openChest(lt.o); } }
-    if (!tgt && !p.heal && !p.down && (p.sh < 60 || p.hp < 70)) startHeal(p, autoHeal(p)); // 戦っていないときに回復
+    // 回復：戦っていないとき（撤退して敵が見えなくなったときも）
+    if (!tgt && !p.heal && !p.down && (p.sh < 60 || p.hp < 70)) startHeal(p, autoHeal(p));
+    botAbil(p, tgt, mates, D, now);
   }
   const tgt = state.players.find(q=>q.id===p.tgt && !q.out);
   const rev = state.players.find(q=>q.id===p.revTgt && q.down);
   const rd = rev ? Math.hypot(rev.x-p.x, rev.y-p.y) : 1e9;
   const run = p.zoneRun && p.zwp && !(rev && rd < REVIVE_RANGE); // 蘇生の手が届く距離なら、そのまま蘇生する
-  let goal = run ? p.zwp : rev ? rev : p.bwp;
+  const cov = p.cov && now < p.cov.until ? p.cov : null;
+  let goal = run ? p.zwp : cov ? cov : rev ? rev : p.bwp;
   let mx=goal.x-p.x, my=goal.y-p.y, m=Math.hypot(mx,my);
-  if (m < (!run && rev ? REVIVE_RANGE*0.6 : 20)) { mx=0; my=0; if (run) p.zwp = null; } else { mx/=m; my/=m; }
-  let ax=p.ax, ay=p.ay, fire=false, act=false;
-  if (rev && rd < REVIVE_RANGE && !run) act = true;
+  if (m < (!run && !cov && rev ? REVIVE_RANGE*0.6 : 20)) { mx=0; my=0; if (run) p.zwp = null; } else { mx/=m; my/=m; }
+  let ax=p.ax, ay=p.ay, fire=false, act=false, pn=false, doQ=false, doU=false;
+  if (rev && rd < REVIVE_RANGE && !run && !cov && !(tgt && now - (p.hitAt||0) < 800)) act = true; // 蘇生中に撃たれたら中断
   let doSw = false, doRl = false;
-  if (!act && tgt && seenBy(tgt,p)) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y), w = wOf(p);
+  if (!act && tgt && seenBy(tgt,p)) { const d = Math.hypot(tgt.x-p.x, tgt.y-p.y)||1, w = wOf(p), ux = (tgt.x-p.x)/d, uy = (tgt.y-p.y)/d;
     // 距離に合った武器へ持ち替える（近い敵には剣、遠い敵には射程の長い武器）
     if (now > (p.botSwAt||0) && botScore(p, p.wp[4]^1, d) > botScore(p, p.wp[4], d) + 0.5) { doSw = true; p.botSwAt = now + 1500; }
-    if (w && w.melee && d > w.reach + R*0.5 && !run) { mx = (tgt.x-p.x)/d; my = (tgt.y-p.y)/d; } // 剣なら近づく
-    if (w && (!w.melee || d < w.reach + R + 10)) { const a = Math.atan2(tgt.y-p.y, tgt.x-p.x) + (Math.random()-.5)*2*BOT_SPREAD; ax=Math.cos(a); ay=Math.sin(a); fire=true; if (!w.melee) { mx*=0.5; my*=0.5; } } }
-  else if (!tgt && p.wp) { const w = wOf(p); if (w && w.ammo && p.wp[p.wp[4]*2+1] < w.mag/2 && !p.rl && bagN(p, ammoCode(w)) > 0) doRl = true;
-    else if (!w && p.wp[(p.wp[4]^1)*2] >= 0 && now > (p.botSwAt||0)) { doSw = true; p.botSwAt = now + 1500; } } // 素手なら、もう1つの武器に持ち替える // 戦っていないときに弾を込めておく
-  if (!fire && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
-  if (p.down) { fire=false; act=false; }
-  return { mx, my, ax, ay, fire, act, doSw, doRl };
+    // 戦いながらの動き：武器に合った距離を保ち、横へ動く（上級・戦術型はよく動く）
+    if (!run && !cov) { if (now > (p.strfAt||0)) { p.strf = Math.random() < .5 ? -1 : 1; p.strfAt = now + 800 + Math.random()*1700; }
+      const near = !w || w.melee, want = near ? 0 : w.eff*0.7, f = d > want*1.2+30 ? 1 : d < want*0.6 ? -1 : 0, s = near ? 0.2 : (p.ps==='tact' || p.df===2) ? 0.9 : p.df===0 ? 0.3 : 0.6;
+      mx = ux*f - uy*p.strf*s; my = uy*f + ux*p.strf*s; const m2 = Math.hypot(mx,my); if (m2 > 0.01) { mx/=m2; my/=m2; } }
+    if (now >= (p.rxAt||0)) { // 反応時間が過ぎてから撃つ
+      const err = (p.aimOff||0)*(1 + d/500)*(p.mvAmt > 0.2 ? 1.3 : 1) + (Math.random()-.5)*0.04, a = Math.atan2(uy, ux) + err; // 遠いほど・動いているほど外れる
+      if (w ? (!w.melee || d < w.reach + R + 10) : d < FIST.reach + R + 6) { ax = Math.cos(a); ay = Math.sin(a); fire = true; if (w && !w.melee) { mx*=0.6; my*=0.6; } }
+      // パンチ：とても近い敵に、弾切れ・リロード中なら殴る
+      if (w && !w.melee && d < FIST.reach + R + 4 && (p.rl > 0 || p.wp[p.wp[4]*2+1] <= 0)) { ax = ux; ay = uy; fire = false; pn = true; }
+      // キュー・ウルト（狙いの要る技は敵の方へ向ける）
+      if (p.bQ) { doQ = true; p.bQ = false; if (p.hero==='blaze' || p.hero==='aegis') { ax = ux; ay = uy; p.ax = ux; p.ay = uy; }
+        if (p.hero==='sonia') p.bbd = p.retreat ? { x:-ux, y:-uy } : { x:ux, y:uy }; }
+      if (p.bU) { doU = true; p.bU = false; } } }
+  else if (!tgt && p.wp) { const w = wOf(p); if (w && w.ammo && p.wp[p.wp[4]*2+1] < w.mag/2 && !p.rl && bagN(p, ammoCode(w)) > 0) doRl = true; // 戦っていないときに弾を込めておく
+    else if (!w && p.wp[(p.wp[4]^1)*2] >= 0 && now > (p.botSwAt||0)) { doSw = true; p.botSwAt = now + 1500; } // 素手なら、もう1つの武器に持ち替える
+    if (p.bQ && (p.hero==='raven' || p.hero==='medi')) { doQ = true; p.bQ = false; } // 戦っていないときの技（探知・回復）
+    if (p.bU && p.hero==='medi') { doU = true; p.bU = false; } }
+  if (act && p.bU && (p.hero==='aegis' || p.hero==='medi')) { doU = true; p.bU = false; } // 蘇生中：フォートレス・エリアリカバリー
+  if (!fire && !pn && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
+  if (p.down) { fire=false; act=false; pn=false; doQ=false; doU=false; }
+  return { mx, my, ax, ay, fire, act, doSw, doRl, doQ, doU, pn, dgc:p.bdgc };
 }
 let feeds = [];
 // tm を付けた通知は、そのチームの人にだけ表示する（敵の蘇生は見せない）
