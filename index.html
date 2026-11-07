@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.11<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.12<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -149,7 +149,7 @@ const CHEST_N = [[3,4],[4,5]], CHEST_P = [[.25,.30,.25,.20],[.20,.20,.20,.40]]; 
 const WCAT = [['HG',.20],['SMG',.25],['AR',.25],['SR',.10],['近接',.10],['魔法',.10]];
 const PRAR = { ground:[.50,.34,.12,.04], hi:[0,.47,.37,.16], drop:[0,.28,.44,.28] }; // パーツのレアリティ
 const MED_P = [['m1',.375],['m2',.125],['s1',.375],['s2',.125]];
-const AMMO_PACK = 20, SWORD_STONE = 2;          // 仮：弾薬1個の弾数／剣のそばに落ちている砥石の数
+const AMMO_PACK = 20, SWORD_STONE = 2, CHEST_AMMO = 100; // CHEST_AMMO：チェスト1箱に必ず入る弾の数          // 仮：弾薬1個の弾数／剣のそばに落ちている砥石の数
 const DROP_AT = [180, 360, 480];                // 補給物資の投下（3分・6分・8分）
 const BOX_LIFE = 120000, OUT_VANISH = 5000;     // デスボックスは120秒。安全地帯の外の物が消えるまで5秒（仮）
 const BAG_SLOTS = 12, PICK_R = 50, AUTO_R = R+10, HOLD_SEC = 0.45, HEAL_MOVE = 0.5; // 拾える距離・長押しの長さ・回復中の移動速度は仮
@@ -555,10 +555,11 @@ addEventListener('keydown', e => { keys[e.code]=true; if (e.repeat) return;
   if (e.code==='KeyM') toggleMap(); if (e.code==='Escape') { if (setOpen) closeSettings(); else if (mapOpen) toggleMap(); else if (bagOpen) toggleBag(); else openSettings(); } });
 addEventListener('keyup', e => { keys[e.code]=false; if (e.code==='KeyH') ringRelease(); });
 let wheelAt = 0; addEventListener('wheel', e => { const n=performance.now(); if (n-wheelAt>250 && Math.abs(e.deltaY)>4) { wheelAt=n; ctr.sw++; } }, { passive:true });
-addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; mouseAt=performance.now(); });
+let touchAt = 0; const mouseOn = () => mouse.used && !padMode; // マウスで狙うのはマウスを最後に使ったときだけ
+addEventListener('mousemove', e => { if (performance.now()-touchAt < 1000) return; padMode = false; mouse.x=e.clientX; mouse.y=e.clientY; mouse.used=true; mouseAt=performance.now(); });
 addEventListener('mousedown', e => { if(e.button===0) mouse.down=true; if(e.button===2) mouse.rdown=true; }); addEventListener('mouseup', e => { if(e.button===2) mouse.rdown=false; else mouse.down=false; });
 addEventListener('contextmenu', e => { if (state.phase==='match') e.preventDefault(); }); // 右クリック＝構え
-function tStart(e){ padMode = false; for (const t of e.changedTouches) { const b=actBtn();
+function tStart(e){ padMode = false; touchAt = performance.now(); mouse.used = false; mouse.down = false; for (const t of e.changedTouches) { const b=actBtn();
     if (mapOpen) { toggleMap(); continue; }
     if ((canRevive() || curTarget) && Math.hypot(t.clientX-b.x, t.clientY-b.y) < b.r+10) { touch.act = { id:t.identifier }; continue; }
     const tb = state.phase==='match' && touchBtns().find(x=>Math.hypot(t.clientX-x.x, t.clientY-x.y) < x.r+6);
@@ -581,7 +582,7 @@ function readInput(me){
   const tR = performance.now(), rdt = Math.min(0.05, (tR-lastRead)/1000); lastRead = tR;
   if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
   if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
-  if (mouse.used && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; aiming = mouse.down || performance.now()-mouseAt < 600; }
+  if (mouseOn() && me) { ax = mouse.x - innerWidth/2; ay = mouse.y - innerHeight/2; fire = mouse.down; aiming = mouse.down || performance.now()-mouseAt < 600; }
   const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g);
   if (gp) { const lx=dz(gp.axes[0]), ly=dz(gp.axes[1]); let rx=dz(gp.axes[2]||0), ry=dz(gp.axes[3]||0);
     if (!padMode && (lx||ly||rx||ry||gp.buttons.some(b=>b&&b.pressed))) padMode = true;
@@ -623,7 +624,7 @@ function readInput(me){
     if (ads && stickAim) { const a0 = Math.atan2(lastAim.y, lastAim.x); let d = Math.atan2(ny, nx) - a0; d = Math.atan2(Math.sin(d), Math.cos(d)); // 構え中はスティックの照準がゆっくり回る
       const m2 = ADS_TURN*rdt; if (Math.abs(d) > m2) { const a1 = a0 + Math.sign(d)*m2; nx = Math.cos(a1); ny = Math.sin(a1); } }
     lastAim={x:nx,y:ny}; }
-  else if (!mouse.used && Math.hypot(mx,my)>0.2) { const a=Math.hypot(mx,my); lastAim={x:mx/a,y:my/a}; } // 照準していないときは移動方向を向く
+  else if (!mouseOn() && Math.hypot(mx,my)>0.2) { const a=Math.hypot(mx,my); lastAim={x:mx/a,y:my/a}; } // 照準していないときは移動方向を向く
   // 体の向き：右スティック（照準）があればそちら。なければ移動方向。止まっているときは最後の向き
   if (aiming && (ax||ay)) lastFace = { x:lastAim.x, y:lastAim.y };
   else if (Math.hypot(mx,my) > 0.2) { const a=Math.hypot(mx,my); lastFace = { x:mx/a, y:my/a }; }
@@ -979,7 +980,8 @@ function openChest(ch){ ch.op = 1; lootTouch(); pushEv({ k:'chest', x:ch.x, y:ch
   if (ch.sp) { const n = 4 + (Math.random()*3|0), ks = ['w','p','p']; while (ks.length < n) ks.push(Math.random()<.5?'a':'m'); // 補給物資：武器1・パーツ2は確定
     for (const k of ks) { const s = dropSpot(ch.x, ch.y); rollItem(k, PRAR.drop, s.x, s.y); } return; }
   const h = ch.hi?1:0, [a,b] = CHEST_N[h], n = a + (Math.random()*(b-a+1)|0), cp = CHEST_P[h];
-  for (let i=0;i<n;i++){ const k = wpick([['w',cp[0]],['a',cp[1]],['m',cp[2]],['p',cp[3]]]), s = dropSpot(ch.x, ch.y); rollItem(k, h?PRAR.hi:PRAR.ground, s.x, s.y); } }
+  for (let i=0;i<n;i++){ const k = wpick([['w',cp[0]],['a',cp[1]],['m',cp[2]],['p',cp[3]]]), s = dropSpot(ch.x, ch.y); if (k!=='a') rollItem(k, h?PRAR.hi:PRAR.ground, s.x, s.y); }
+  { const ns = Math.round(CHEST_AMMO/2/10)*10; for (const [c,k] of [['as',ns],['al',CHEST_AMMO-ns]]) { const s = dropSpot(ch.x, ch.y); mkItem(c, s.x, s.y, { n:k }); } } } // 弾は小口径・大口径を半分ずつ
 // 補給物資：次の安全地帯の中に落ちてくる
 function supplyDrop(zn){ const z = zn && !zn.gone ? (zn.next || zn) : { x:MAP/2, y:MAP/2, r:2000 };
   let s = null; for (let i=0;i<300 && !s;i++){ const a=Math.random()*Math.PI*2, d=Math.sqrt(Math.random())*z.r*0.6, x=z.x+Math.cos(a)*d, y=z.y+Math.sin(a)*d; if (spotOK(x,y)) s={x,y}; }
@@ -1704,7 +1706,7 @@ function drawHear(mp, pos, vis, W, H){ const hid = new Set(vis.filter(v=>v.hid).
 function drawCrosshair(mp, me, W, H){ if (!cfg.chA) return;
   const w = wOf(mp), cx = W/2, cy = H/2, a = cfg.chA/100, col = CH_COL[cfg.chCol][1], sz = 0.6 + cfg.chSize*0.08;
   let x, y, D;
-  if (mouse.used && performance.now()-mouseAt < 4000 && !navigator.getGamepads?.().some?.(g=>g&&g.axes&&Math.hypot(g.axes[2]||0,g.axes[3]||0)>0.3)) { x = mouse.x; y = mouse.y; D = Math.hypot(x-cx, y-cy)/ZOOM; }
+  if (mouseOn() && performance.now()-mouseAt < 4000 && !navigator.getGamepads?.().some?.(g=>g&&g.axes&&Math.hypot(g.axes[2]||0,g.axes[3]||0)>0.3)) { x = mouse.x; y = mouse.y; D = Math.hypot(x-cx, y-cy)/ZOOM; }
   else { D = Math.max(110, Math.min(w ? (w.melee ? w.reach+40 : w.magic && mp.mm ? 200 : w.eff) : 90, Math.min(W, H)*0.42/ZOOM)); x = cx + me.ax*D*ZOOM; y = cy + me.ay*D*ZOOM; }
   const sp = (w && !w.melee ? w.base + w.moveB*Math.min(1, me.mv||0) : 0)*(me.ads ? ADS_SPREAD : 1);
   const gap = Math.max(4, Math.min(60, Math.tan(sp)*D*ZOOM)) * sz, len = 7*sz;
