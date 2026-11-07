@@ -23,8 +23,13 @@
   #roomInfo { display:none; } .code { font-size:32px; letter-spacing:6px; font-weight:800; color:var(--accent); text-align:center; margin:6px 0; }
   ul { list-style:none; padding:0; margin:8px 0; } li { padding:8px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; font-size:14px; }
   .tag { font-size:12px; color:var(--sub); } #msg { color:var(--ng); font-size:13px; min-height:18px; margin-top:8px; }
-  #heroSel { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; } #heroSel button { margin:0; padding:8px 2px; font-size:12px; background:#2c3450; color:var(--text); border:2px solid transparent; line-height:1.3; }
-  #heroSel button.on { border-color:var(--accent); background:#3a3320; } #heroSel b { display:block; font-size:13px; }
+  #pre { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); overflow-y:auto; }
+  #pre .card { max-width:520px; margin:auto; } #preTop { font-size:18px; font-weight:800; text-align:center; margin-bottom:6px; } #preTop span { color:#ffe28a; }
+  #preCv { display:block; margin:0 auto; touch-action:none; border-radius:8px; } #preMsg { text-align:center; font-size:13px; margin:6px 0; min-height:18px; }
+  #pre ul { list-style:none; padding:0; margin:8px 0; font-size:13px; } #pre li { padding:3px 0; border-bottom:1px solid #222a40; }
+  .prefRow { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:4px; } .prefRow select { padding:6px 2px; font-size:12px; }
+  #heroSel, .hsel { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; } #heroSel button, .hsel button { margin:0; padding:8px 2px; font-size:12px; background:#2c3450; color:var(--text); border:2px solid transparent; line-height:1.3; }
+  #heroSel button.on, .hsel button.on { border-color:var(--accent); background:#3a3320; } #heroSel b, .hsel b { display:block; font-size:13px; }
   #heroInfo { font-size:12px; color:var(--sub); line-height:1.6; margin-top:6px; } #heroInfo b { color:var(--text); }
   .help { font-size:12px; color:var(--sub); margin-top:12px; line-height:1.6; }
   #game { position:absolute; inset:0; display:none; } canvas { display:block; width:100%; height:100%; cursor:none; }
@@ -59,8 +64,8 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.8.13<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
-  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階8：ヒーロー</div>
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.9.0<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+  <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
     <button id="btnHost">部屋を作る</button>
@@ -74,7 +79,7 @@
     <div id="teamBox"><label>チーム人数<span class="padhint">（コントローラー：左右かAで変更）</span></label>
       <select id="teamSel"><option value="1">ソロ</option><option value="2" selected>2人</option><option value="3">3人</option><option value="4">4人</option><option value="5">5人</option></select></div>
     <div class="sub" id="teamTxt" style="margin:8px 0 0"></div>
-    <div id="heroBox"><label>ヒーロー（第1候補）</label><div id="heroSel"></div><div id="heroInfo"></div></div>
+    <div id="heroBox"><label>ヒーロー（第1候補）</label><div id="heroSel"></div><div id="heroInfo"></div><label>第2〜第5候補（だれにも見えません）</label><div class="prefRow" id="prefRow"></div></div>
     <ul id="plist"></ul>
     <button id="btnStart" style="display:none">試合開始（空き枠はBOT）</button>
     <div class="sub" id="waitTxt" style="text-align:center;display:none">ホストの開始を待っています…</div>
@@ -83,6 +88,7 @@
   <div class="help">操作：コントローラー 左スティック移動・右スティック照準・R1で攻撃・L1で構え（近接武器はダッシュ）・R2でキュー・L2＋R2同時長押しでウルト・Bで回避・Yで武器切替・Xでリロード（ダウンした味方の近くでは長押しで蘇生）・十字左で武器のモード切替・R3でパンチ／PC WASD移動・マウス照準・クリック攻撃・右クリック／Shiftで構え・Fでキュー・Zでウルト・Cでパンチ・Q／ホイールで武器切替・Rでリロード・Vで範囲攻撃モード・E長押しで蘇生／スマホ 画面左で移動・画面右で照準＋攻撃・右下のボタンで切替・リロード・蘇生<br>物資：E（スマホは右下のボタン・コントローラーはX）でチェストを開ける・武器を拾う・デスボックスを開く／パーツは長押しで保管／H（十字キー上）で回復<br>持ち物：スタート・I・Tab（スマホは持ち物ボタン）／設定：スタート長押し・Esc（スマホは持ち物ボタン長押し）／マップ：セレクト・M（スマホはミニマップを押す）<br>開始時は素手です。チェストを開けて武器を拾ってください</div>
 </div></div>
 
+<div id="pre"><div id="preTop"></div><div id="preBody"></div></div>
 <div id="game"><canvas id="cv"></canvas><div id="timer">10:00</div><div id="hud"></div><div id="feed"></div><div id="bagp" class="panel"></div><div id="setp" class="panel"></div><div id="boxp" class="panel"></div><div id="ptr"><svg viewBox="0 0 26 26"><path d="M3 2l17 11-8 1 5 9-3 2-5-9-6 6z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
   <div id="result"><div class="card"><div id="resTxt"></div><button id="btnLobby" style="display:none">ロビーに戻る</button><div class="sub" id="resWait" style="margin:10px 0 0">ホストがロビーに戻すのを待っています…</div></div></div>
 </div>
@@ -212,6 +218,7 @@ const BOT_SPREAD = 0.12;
 const ZOOM = 0.8;                    // 画面の拡大率（小さいほど広く見える）
 // 距離の数値は仕様の約0.6倍にする（りょうさんの決定）。出撃地点の選択を作るときに使う
 const SPAWN_ENEMY_MIN = 300;         // 敵チームの最低出撃距離（仕様500×0.6）
+const PICK_SEC = 20, DROP_SEC = 20;   // ヒーロー選択・出撃地点予約の時間（仕様）
 const SPAWN_ALLY_R = 72;             // 味方の出撃はリーダーから半径72以内（仕様120×0.6）
 // 安全地帯（仕様5）。at＝縮小が始まる秒、dur＝縮小にかける秒、area＝マップ全体に対する面積、dmg＝この段階の場外ダメージ/秒
 // 最初の円はマップ全体を囲む円。縮小の始まる時刻は表の時刻と読んでいます（変えるならここだけ）
@@ -678,9 +685,9 @@ function localStep(dt){
 
 // ===== ホスト =====
 function startHost(){
-  roomCode = genCode(); isHost = true;
+  fixPrefs(); roomCode = genCode(); isHost = true;
   peer = new Peer(PREFIX + roomCode);
-  peer.on('open', id => { myId = id; state.players = [{ id, name:myName(), bot:false, slot:0, h1:myHero }]; showRoom(); });
+  peer.on('open', id => { myId = id; state.players = [{ id, name:myName(), bot:false, slot:0, h1:myHero, pr:myPrefs.slice() }]; showRoom(); });
   peer.on('connection', c => {
     c.on('open', () => {
       if (state.phase!=='lobby' || state.players.filter(p=>!p.bot).length >= MAX_PLAYERS) {
@@ -689,8 +696,10 @@ function startHost(){
     });
     c.on('data', d => {
       if (d.t==='hello') { const used=state.players.map(p=>p.slot); let slot=0; while(used.includes(slot)) slot++;
-        state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot, h1:HEROES[d.h1]?d.h1:'raven' }); renderList(); broadcast(); }
-      else if (d.t==='hero') { const p = state.players.find(p=>p.id===c.peer); if (p && state.phase==='lobby' && HEROES[d.h1]) { p.h1 = d.h1; renderList(); broadcast(); } }
+        state.players.push({ id:c.peer, name:String(d.name).slice(0,10), bot:false, slot, h1:HEROES[d.h1]?d.h1:'raven', pr:cleanPr(d.pr) }); renderList(); broadcast(); }
+      else if (d.t==='hero') { const p = state.players.find(p=>p.id===c.peer); if (p && (state.phase==='lobby' || state.phase==='pick') && HEROES[d.h1]) { p.h1 = d.h1; p.pr = cleanPr(d.pr); if (state.phase==='lobby') renderList(); broadcast(); } }
+      else if (d.t==='lc') { const p = state.players.find(p=>p.id===c.peer); if (p && state.phase==='pick') { p.lc = !!d.v; broadcast(); } }
+      else if (d.t==='res') { const p = state.players.find(p=>p.id===c.peer); if (p) hostRes(p, +d.x, +d.y); }
       else if (d.t==='in') inputs[c.peer] = d;
       else if (d.t==='cmd') hostCmd(state.players.find(p=>p.id===c.peer), d);
     });
@@ -702,34 +711,73 @@ function onLeave(pid){
   if (!conns[pid]) return; delete conns[pid]; delete inputs[pid];
   const p = state.players.find(p=>p.id===pid); if (!p) return;
   if (state.phase==='lobby') state.players = state.players.filter(x=>x.id!==pid);
-  else { p.bot = true; p.left = true; p.name += '(BOT)'; feed(`${p.name} がBOTに交代`); }
+  else { p.bot = true; p.left = true; p.name += '(BOT)'; feed(`${p.name} がBOTに交代`);
+    if (p.lead && (state.phase==='pick' || state.phase==='drop')) { const c = state.players.filter(q=>q!==p && !q.bot && teamOf(q.slot)===teamOf(p.slot)); // リーダーが抜けたら残った味方から選び直す
+      if (c.length) { p.lead = false; c[Math.random()*c.length|0].lead = true; } } }
   renderList(); broadcast();
 }
+const cleanPr = pr => { const a = Array.isArray(pr) ? pr.filter(h=>HEROES[h]) : []; return [...new Set(a)].slice(0, 5); };
+// 試合開始ボタン：チーム編成 → ヒーロー選択（20秒）→ リーダー決定 → 出撃地点予約（20秒）→ 試合
 function hostStartMatch(){
   state.teamSize = +$('teamSel').value;
+  // 人間をできるだけ同じチームに：人間を前の枠から詰める（ホストは0のまま）
+  const hum = state.players.filter(p=>!p.bot).sort((a,b)=>a.slot-b.slot); hum.forEach((p,i)=>p.slot = i);
+  state.players = hum;
   const names = BOT_NAMES.filter(n=>!state.players.some(p=>p.name===n)).sort(()=>Math.random()-.5);
-  for (let s=0;s<maxSlots();s++) if (!state.players.some(p=>p.slot===s)) state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s });
+  for (let s=0;s<maxSlots();s++) if (!state.players.some(p=>p.slot===s)) { const pr = HIDS.slice().sort(()=>Math.random()-.5); state.players.push({ id:'bot'+s, name:names.pop(), bot:true, slot:s, h1:pr[0], pr }); }
+  for (const p of state.players) Object.assign(p, { hero:null, lc:false, lead:false, res:null });
+  state.phase = 'pick'; state.pickEnd = Date.now() + PICK_SEC*1000; state.dropEnd = 0; state.winner = null; state.bullets = []; state.loot = null;
+  broadcast(); showPre();
+}
+// ヒーロー選択の終わり：ヒーロー確定 → リーダー決定 → 出撃地点予約へ
+function hostEndPick(){
   assignHeroes();
-  // チームごとにまとまって配置
-  const nTeams = Math.ceil(maxSlots()/state.teamSize), base = [];
-  const a0 = Math.random()*Math.PI*2;
-  for (let t=0;t<nTeams;t++){ const a=a0+t/nTeams*Math.PI*2; const rr = 1400 + nTeams*60; base.push(freeSpot(8000+Math.cos(a)*rr, 7550+Math.sin(a)*rr, 300)); } // 仮：旧市街のまわりに出現（チームが多いほど広く）
-  state.players.forEach(p => { const b=base[teamOf(p.slot)]||base[0], s=freeSpot(b.x, b.y, SPAWN_ALLY_R);
-    Object.assign(p, { skin:p.skin||'default', x:s.x, y:s.y, ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, rv:0, dhp:0, dsh:0, wp:null, bwp:null,
+  const teams = {}; for (const p of state.players) (teams[teamOf(p.slot)] = teams[teamOf(p.slot)] || []).push(p);
+  for (const t in teams) { const ms = teams[t], c = ms.filter(p=>p.lc && !p.bot), pool = c.length ? c : ms; pool[Math.random()*pool.length|0].lead = true; }
+  for (const p of state.players) if (p.bot) p.resAt = Date.now() + (2 + Math.random()*12)*1000; // BOTのリーダーは少し待ってから選ぶ
+  state.phase = 'drop'; state.dropEnd = Date.now() + DROP_SEC*1000; broadcast(); showPre();
+}
+const leaderOf = tm => state.players.find(p=>(p.lead||p.ld) && teamOf(p.slot)===tm);
+// 予約できる場所か：リーダーの基準地点は、ほかのチームの基準地点から SPAWN_ENEMY_MIN 以上離す
+function baseOK(tm, x, y, bases){ if (x<200 || y<200 || x>MAP-200 || y>MAP-200 || !spotOK(x, y)) return false;
+  for (const q of (bases || state.players.filter(q=>q.lead && q.res).map(q=>({ tm:teamOf(q.slot), x:q.res.x, y:q.res.y })))) if (q.tm!==tm && Math.hypot(q.x-x, q.y-y) < SPAWN_ENEMY_MIN) return false; return true; }
+function hostRes(p, x, y){
+  if (state.phase!=='drop' || !p || !isFinite(x) || !isFinite(y)) return; const tm = teamOf(p.slot), L0 = leaderOf(tm);
+  if (p.lead) { if (!baseOK(tm, x, y)) return; p.res = { x:Math.round(x), y:Math.round(y) };
+    for (const q of state.players) if (q!==p && teamOf(q.slot)===tm && q.res && Math.hypot(q.res.x-x, q.res.y-y) > SPAWN_ALLY_R) q.res = null; } // 範囲から外れた味方は予約し直し
+  else { if (!L0 || !L0.res) return; let dx = x-L0.res.x, dy = y-L0.res.y; const d = Math.hypot(dx, dy); if (d > SPAWN_ALLY_R) { dx *= SPAWN_ALLY_R/d; dy *= SPAWN_ALLY_R/d; } // 範囲の外を押したら、いちばん近い縁に
+    const nx = L0.res.x+dx, ny = L0.res.y+dy; if (!spotOK(nx, ny)) return; p.res = { x:Math.round(nx), y:Math.round(ny) }; }
+  broadcast(); }
+// ホストが毎フレーム：時間切れ・BOTの予約
+function hostPreTick(){ const now = Date.now();
+  if (state.phase==='pick' && now >= state.pickEnd) hostEndPick();
+  else if (state.phase==='drop') { for (const p of state.players) if (p.bot && p.lead && !p.res && now >= (p.resAt||0)) { for (let i=0;i<200 && !p.res;i++) { const s = freeSpot(); hostRes(p, s.x, s.y); } p.resAt = Infinity; }
+    if (now >= state.dropEnd) hostBeginMatch(); } }
+// 出撃地点を決めて試合開始
+function hostBeginMatch(){
+  const teams = {}; for (const p of state.players) (teams[teamOf(p.slot)] = teams[teamOf(p.slot)] || []).push(p);
+  const bases = []; for (const t in teams) { const L0 = teams[t].find(p=>p.lead); if (L0 && L0.res) bases.push({ tm:+t, x:L0.res.x, y:L0.res.y }); }
+  for (const t in teams) { let b = bases.find(q=>q.tm===+t);
+    if (!b) { let s = null; for (let i=0;i<300 && !s;i++) { const c = freeSpot(); if (baseOK(+t, c.x, c.y, bases)) s = c; } s = s || freeSpot(); b = { tm:+t, x:s.x, y:s.y }; bases.push(b);
+      for (const p of teams[t]) p.res = null; } // だれも選ばなかったチームは、まとめてランダムな場所へ
+    for (const p of teams[t]) { const ok = p.res && Math.hypot(p.res.x-b.x, p.res.y-b.y) <= SPAWN_ALLY_R+1 && spotOK(p.res.x, p.res.y);
+      const s = ok ? p.res : freeSpot(b.x, b.y, SPAWN_ALLY_R*0.7); p.x = s.x; p.y = s.y; } }
+  state.players.forEach(p => {
+    Object.assign(p, { skin:p.skin||'default', ax:1, ay:0, hp:100, sh:100, down:false, out:false, downs:0, rs:0, cd:0, rv:0, dhp:0, dsh:0, wp:null, bwp:null,
       kills:0, kn:0, dmg:0, rvc:0, life:0, place:0, downBy:null, zAcc:0, qCd:0, uCd:0, drUntil:0, phUntil:0, spot:null, blindUntil:0, bdUntil:0, bzUntil:0, dgCd:0 }); giveLoadout(p); }); // 成績：キル・ダウンさせた回数・与ダメ・蘇生回数・生存時間・順位
   for (const k in engaged) delete engaged[k];
   state.zone = makeZones(); state.tplace = {}; state.casts = []; state.ab = { nades:[], fields:[], walls:[], eyes:[], domes:[] }; state.ev = []; state.drops = []; spawnLoot();
   state.phase='match'; state.startAt=Date.now(); state.winner=null; state.bullets=[]; feeds=[]; state.feed=[];
-  broadcast(); enterGame();
+  hidePre(); broadcast(); enterGame();
 }
-// ヒーローを決める：同じチームで重なったら、使う人をランダムに決め、残りは空いているヒーローから（第2〜5候補は段階9で）
+// ヒーローを決める：同じチームで第1候補が重なったら使う人をランダムに。使えなかった人は第2〜5候補の順、それもだめなら残りからランダム
 function assignHeroes(){
   const teams = {}; for (const p of state.players) (teams[teamOf(p.slot)] = teams[teamOf(p.slot)] || []).push(p);
   for (const t in teams) { const used = new Set(), rest = [];
     const ps = teams[t].slice().sort(()=>Math.random()-.5);
-    for (const p of ps) { if (!p.bot && HEROES[p.h1] && !used.has(p.h1)) { p.hero = p.h1; used.add(p.h1); } else rest.push(p); }
-    for (const p of rest) { const free = HIDS.filter(h=>!used.has(h)), pool = free.length ? free : HIDS;
-      p.hero = pool[Math.random()*pool.length|0]; used.add(p.hero); } }
+    for (const p of ps) { if (HEROES[p.h1] && !used.has(p.h1)) { p.hero = p.h1; used.add(p.h1); } else rest.push(p); }
+    for (const p of rest) { const pr = (p.pr||[]).slice(1).find(h=>HEROES[h] && !used.has(h)); const free = HIDS.filter(h=>!used.has(h)), pool = free.length ? free : HIDS;
+      p.hero = pr || pool[Math.random()*pool.length|0]; used.add(p.hero); } }
 }
 // ===== キュー（ホストが処理） =====
 const segX = (ax,ay,bx,by,cx,cy,dx,dy) => { const d = (bx-ax)*(dy-cy)-(by-ay)*(dx-cx); if (!d) return false;
@@ -785,7 +833,7 @@ function abilTick(dt, now){ const A = state.ab; if (!A) return;
 const packAb = () => { const A = state.ab || { nades:[], fields:[], walls:[], eyes:[], domes:[] };
   return { n:A.nades.map(g=>[g.x0,g.y0,g.x,g.y,g.t0,g.land,g.at]), f:A.fields.map(f=>[f.x,f.y,f.r,f.until,f.tm]), w:A.walls.map(w=>[w.x1,w.y1,w.x2,w.y2,Math.max(0,w.hp),w.until]), e:(A.eyes||[]).map(e=>[e.x,e.y,e.r,e.until,e.tm]), d:(A.domes||[]).map(o=>[o.x,o.y,o.r,o.until]) }; };
 function hostBackToLobby(){
-  state.players = state.players.filter(p=>!p.bot);
+  state.players = state.players.filter(p=>!p.bot); for (const p of state.players) Object.assign(p, { lc:false, lead:false, res:null });
   state.phase='lobby'; state.bullets=[]; state.loot=null; broadcast(); showLobby();
 }
 let bulletId = 0;
@@ -1206,8 +1254,8 @@ function canRevive(){ const mp = state.players.find(p=>p.id===myId); if (!mp || 
 function broadcast(){
   const now = Date.now();
   const tp = state.tplace || {};
-  const s = { map:state.map, phase:state.phase, startAt:state.startAt, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
-    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, hero:p.hero, h1:p.h1, bz:bzOf(p), sn:snOf(p), qcd:+qcdOf(p).toFixed(1), ucd:+ucdOf(p).toFixed(1), dr:rushOf(p), ph:phOf(p), bdr:blindOf(p), spt:p.spot ? Object.keys(p.spot).filter(t=>p.spot[t]>now).map(Number) : 0, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
+  const s = { map:state.map, phase:state.phase, startAt:state.startAt, pickEnd:state.pickEnd, dropEnd:state.dropEnd, feed:state.feed, teamSize:state.teamSize, winner:state.winner, zone:state.zone,
+    players: state.players.map(p=>({ id:p.id, name:p.name, bot:p.bot, slot:p.slot, skin:p.skin, hero:p.hero, h1:p.h1, lc:p.lc?1:0, ld:p.lead?1:0, res:p.res||0, bz:bzOf(p), sn:snOf(p), qcd:+qcdOf(p).toFixed(1), ucd:+ucdOf(p).toFixed(1), dr:rushOf(p), ph:phOf(p), bdr:blindOf(p), spt:p.spot ? Object.keys(p.spot).filter(t=>p.spot[t]>now).map(Number) : 0, x:Math.round(p.x), y:Math.round(p.y), ax:+(p.ax||1).toFixed(2), ay:+(p.ay||0).toFixed(2), fx:+(p.fx??p.ax??1).toFixed(2), fy:+(p.fy??p.ay??0).toFixed(2),
       hp:p.hp, sh:p.sh, down:p.down, dg:(p.dgUntil||0)>now?1:0, out:p.out, rs:p.rs, kills:p.kills, kn:p.kn, dmg:p.dmg, rvc:p.rvc, life:Math.round(p.life||0), place:tp[teamOf(p.slot)]||0, dhp:p.dhp, dsh:p.dsh,
       wp:p.wp, pt:p.pt, bag:p.bag, hl:p.heal?+Math.min(1,1-(p.heal.t-now)/p.heal.dur).toFixed(2):0, hc:p.heal?p.heal.c:0, mp:Math.round(p.mp||0), rl:p.rl>0?+(1-p.rl/p.rlT).toFixed(2):0, mm:p.mm, cs:p.cast?1:0, ac:p.aimA&&p.aimA.x!==undefined?[p.aimA.x,p.aimA.y]:0, na:now-(p.noAmmo||0)<1200?1:0, uw:mostUsed(p), rv:+(p.rv||0).toFixed(2), bl:p.down?Math.max(0,(p.bleedAt-now)/1000|0):0 })),
     bullets: state.bullets.map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.vx),Math.round(b.vy),b.k,b.id,b.w]),
@@ -1225,7 +1273,7 @@ function startJoin(){
   peer.on('open', id => {
     myId = id; hostConn = peer.connect(PREFIX+roomCode, { reliable:true });
     const to = setTimeout(()=>msg('部屋が見つかりません'), 8000);
-    hostConn.on('open', () => { clearTimeout(to); hostConn.send({ t:'hello', name:myName(), h1:myHero }); showRoom(); });
+    hostConn.on('open', () => { clearTimeout(to); fixPrefs(); hostConn.send({ t:'hello', name:myName(), h1:myHero, pr:myPrefs }); showRoom(); });
     hostConn.on('data', d => {
       if (d.t==='reject') { msg(d.reason); return; }
       if (d.t==='state') {
@@ -1236,7 +1284,8 @@ function startJoin(){
         state.casts = d.s.casts.map(a=>({x:a[0],y:a[1],r:a[2],at:Date.now()+a[3]})); takeEvents(state.ev);
         if (state.map && W.id !== state.map) buildWorld(state.map);
         for (const p of state.players) { const o=prev[p.id]; const keep = o && o.dx!==undefined && o.rs===p.rs; p.dx=keep?o.dx:p.x; p.dy=keep?o.dy:p.y; }
-        if (before==='lobby' && state.phase==='match') { local=null; enterGame(); }
+        if (state.phase==='pick' || state.phase==='drop') { if (before!==state.phase) showPre(); }
+        else if (state.phase==='match' && (before==='lobby' || before==='pick' || before==='drop')) { hidePre(); local=null; enterGame(); }
         else if (before!=='lobby' && state.phase==='lobby') showLobby();
         else if (state.phase==='lobby') renderList();
       }
@@ -1249,7 +1298,7 @@ function startJoin(){
 // ===== ロビー =====
 function showRoom(){ $('entry').style.display='none'; $('roomInfo').style.display='block'; $('codeOut').textContent=roomCode;
   $('btnStart').style.display=isHost?'block':'none'; $('waitTxt').style.display=isHost?'none':'block'; $('teamBox').style.display=isHost?'block':'none'; $('mapBox').style.display=isHost?'block':'none'; msg(''); renderList(); }
-function showLobby(){ $('game').style.display='none'; $('result').style.display='none'; $('lobby').style.display='flex'; showRoom(); }
+function showLobby(){ hidePre(); $('game').style.display='none'; $('result').style.display='none'; $('lobby').style.display='flex'; showRoom(); }
 function renderList(){
   if (isHost) { state.teamSize = +$('teamSel').value; state.map = $('mapSel').value; }
   const md = MAPS[state.map] || MAPS.soltia; $('mapTxt').textContent = `マップ：${md.name}　${md.story}`;
@@ -1262,13 +1311,20 @@ function renderList(){
 $('teamSel').onchange = () => { renderList(); broadcast(); };
 // ヒーロー選択（ロビー）。選んだヒーローは次回も残す
 let myHero = 'raven'; try { const h = localStorage.getItem('hbr_hero'); if (HEROES[h]) myHero = h; } catch(e){}
-function renderHeroSel(){
+// 候補の順番（第1〜第5）。第1候補＝myHero
+let myPrefs = []; try { myPrefs = JSON.parse(localStorage.getItem('hbr_prefs')||'[]'); } catch(e){}
+function fixPrefs(){ myPrefs = [myHero, ...myPrefs.filter(h=>HEROES[h] && h!==myHero)]; for (const h of HIDS) if (!myPrefs.includes(h)) myPrefs.push(h); myPrefs = myPrefs.slice(0, 5);
+  try { localStorage.setItem('hbr_hero', myHero); localStorage.setItem('hbr_prefs', JSON.stringify(myPrefs)); } catch(e){} }
+function sendHero(){ fixPrefs(); if (isHost) { const me = state.players.find(p=>p.id===myId); if (me) { me.h1 = myHero; me.pr = myPrefs.slice(); } if (state.phase==='lobby') renderList(); broadcast(); }
+  else if (hostConn && hostConn.open) hostConn.send({ t:'hero', h1:myHero, pr:myPrefs }); }
+function renderPrefs(){ fixPrefs(); $('prefRow').innerHTML = [1,2,3,4].map(i=>`<select data-i="${i}">${HIDS.filter(h=>h!==myHero).map(h=>`<option value="${h}"${myPrefs[i]===h?' selected':''}>${i+1}. ${HEROES[h].name}</option>`).join('')}</select>`).join(''); }
+$('prefRow').onchange = e => { const el = e.target, i = +el.dataset.i, v = el.value, j = myPrefs.indexOf(v); if (j > 0) [myPrefs[i], myPrefs[j]] = [myPrefs[j], myPrefs[i]]; renderPrefs(); sendHero(); };
+function renderHeroSel(){ fixPrefs(); renderPrefs();
   $('heroSel').innerHTML = HIDS.map(k=>`<button data-h="${k}" class="${k===myHero?'on':''}"><b style="color:${HEROES[k].col}">${HEROES[k].name}</b>${HEROES[k].role}</button>`).join('');
   const h = HEROES[myHero];
   $('heroInfo').innerHTML = `<b>パッシブ「${h.p[0]}」</b> ${h.p[1]}<br><b>キュー「${h.q[0]}」</b> ${h.q[1]}（CT${h.q[2]}秒）<br><b>ウルト「${h.u[0]}」</b> ${h.u[1]}（CT${h.u[2]}秒）<br>※同じチームで重なったら、使う人はランダムで決まります`;
 }
-$('heroSel').onclick = e => { const b = e.target.closest('button'); if (!b) return; myHero = b.dataset.h; try { localStorage.setItem('hbr_hero', myHero); } catch(e){}
-  renderHeroSel(); if (isHost) { const me = state.players.find(p=>p.id===myId); if (me) me.h1 = myHero; renderList(); broadcast(); } else if (hostConn && hostConn.open) hostConn.send({ t:'hero', h1:myHero }); };
+$('heroSel').onclick = e => { const b = e.target.closest('button'); if (!b) return; myHero = b.dataset.h; renderHeroSel(); sendHero(); };
 renderHeroSel();
 $('mapSel').innerHTML = Object.entries(MAPS).map(([k,m])=>`<option value="${k}">${esc(m.name)}</option>`).join('');
 $('mapSel').onchange = () => { renderList(); buildWorld(state.map); broadcast(); };
@@ -1292,13 +1348,13 @@ function enterGame(){ lastEv=0; fxs.length=0; closeBox(); mapOpen=false; closeSe
 let netAcc = 0, seenBul = new Set();
 function frame(t){
   const dt = Math.max(0, Math.min(0.05, (t-lastT)/1000)); lastT = t; // 最初のフレームは時刻がずれてマイナスになることがある
-  const me = state.phase==='lobby' ? null : localStep(dt);
+  const inGame = state.phase==='match' || state.phase==='end', me = inGame ? localStep(dt) : null;
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
   else { sendAcc += dt; if (me && sendAcc >= 0.033 && hostConn && hostConn.open) { sendAcc=0;
       hostConn.send({ t:'in', x:Math.round(me.x), y:Math.round(me.y), ax:+me.ax.toFixed(3), ay:+me.ay.toFixed(3), fx:+me.fx.toFixed(2), fy:+me.fy.toFixed(2), fire:me.fire, act:me.act, ta:me.ta, mv:+me.mv.toFixed(2), sw:me.sw, rl:me.rl, mm:me.mm, dgc:me.dgc, quc:me.quc, ulc:me.ulc, ads:me.ads?1:0, pn:me.pn?1:0, dash:me.dash, vw:myView().w, vh:myView().h }); }
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
-  if (state.phase!=='lobby') draw(me);
+  if (inGame) draw(me);
   requestAnimationFrame(frame);
 }
 // ===== 斜め見下ろしの描画 =====
@@ -2090,11 +2146,11 @@ function renderSettings(){
 let mapOpen = false, bigCv = null, bigId = null; const BIG = 360;
 function toggleMap(){ mapOpen = !mapOpen && state.phase==='match'; if (mapOpen) { closeSettings(); if (bagOpen) toggleBag(); } sfx('ui'); }
 function miniHit(x, y){ const x0 = innerWidth - MINI - 12 - SAFE.r, y0 = 10 + SAFE.t; return x > x0-6 && x < x0+MINI+6 && y > y0-6 && y < y0+MINI+6; }
-function drawBigMap(zn, pos, mp){
-  if (!bigCv || bigId !== W.id) { bigId = W.id; bigCv = document.createElement('canvas'); bigCv.width = bigCv.height = BIG;
+function bigImg(){ if (!bigCv || bigId !== W.id) { bigId = W.id; bigCv = document.createElement('canvas'); bigCv.width = bigCv.height = BIG;
     const g = bigCv.getContext('2d'), st = MAP/BIG;
     for (let j=0;j<BIG;j++) for (let i=0;i<BIG;i++) { const t = groundAt((i+.5)*st, (j+.5)*st); g.fillStyle = rgb(t==='sea' ? GC.seaD : GC[t] || GC.grass, 0); g.fillRect(i,j,1,1); }
-    g.fillStyle='rgba(60,50,40,.6)'; for (const o of W.obs) if (o.k==='bld'||o.k==='wh') g.fillRect(o.x/st, o.y/st, Math.max(1,o.w/st), Math.max(1,o.h/st)); }
+    g.fillStyle='rgba(60,50,40,.6)'; for (const o of W.obs) if (o.k==='bld'||o.k==='wh') g.fillRect(o.x/st, o.y/st, Math.max(1,o.w/st), Math.max(1,o.h/st)); } return bigCv; }
+function drawBigMap(zn, pos, mp){ bigImg();
   const Wd = innerWidth, Hd = innerHeight, S = Math.min(Wd-24-SAFE.l-SAFE.r, Hd-60-SAFE.t-SAFE.b), x0 = (Wd-S)/2, y0 = Math.max(10+SAFE.t, (Hd-S)/2-10), k = S/MAP;
   ctx.save(); ctx.fillStyle='rgba(0,0,0,.7)'; ctx.fillRect(0,0,Wd,Hd);
   ctx.imageSmoothingEnabled = true; ctx.drawImage(bigCv, x0, y0, S, S);
@@ -2216,7 +2272,7 @@ function renderResult(mp){
 const PAD_CH = { codeIn:'ABCDEFGHJKLMNPQRSTUVWXYZ', name:' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンー' };
 const mnu = { prev:[], rep:{}, foc:null, edit:null, ci:0 };
 function menuItems(){
-  const root = $('result').style.display==='flex' ? $('result') : $('lobby').style.display!=='none' && $('game').style.display!=='block' ? $('lobby') : null;
+  const root = $('pre').style.display==='flex' ? $('pre') : $('result').style.display==='flex' ? $('result') : $('lobby').style.display!=='none' && $('game').style.display!=='block' ? $('lobby') : null;
   if (!root) return [];
   return [...root.querySelectorAll('button, input, select')].filter(e => e.offsetParent !== null && !e.disabled); }
 function menuFocus(el){ if (mnu.foc) mnu.foc.classList.remove('padf'); mnu.foc = el; if (el) { el.classList.add('padf'); el.scrollIntoView({ block:'nearest' }); } }
@@ -2254,6 +2310,73 @@ function menuPad(){
 // 選択欄（チーム人数・マップ）：左右かAで切り替え。端まで行ったら反対側へ戻る
 function selStep(el, d){ const n = el.options.length; el.selectedIndex = (el.selectedIndex + d + n) % n; el.dispatchEvent(new Event('change')); sfx('ui'); }
 requestAnimationFrame(menuPad);
+// ===== 出撃前の画面（ヒーロー選択・出撃地点予約） =====
+const isLd = p => !!(p && (p.lead || p.ld));
+let preOn = false, preKey = '', preCur = null, prePrev = [], preBc = 0;
+function showPre(){ $('lobby').style.display='none'; $('game').style.display='none'; $('result').style.display='none'; $('pre').style.display='flex'; preKey = ''; preCur = null;
+  if (!preOn) { preOn = true; requestAnimationFrame(preLoop); } }
+function hidePre(){ $('pre').style.display='none'; preOn = false; }
+const meP = () => state.players.find(p=>p.id===myId);
+function preLoop(){ if (!preOn) return; requestAnimationFrame(preLoop);
+  if (isHost) { hostPreTick(); if (!preOn) return; const n = performance.now(); if (n-preBc > 250) { preBc = n; broadcast(); } }
+  renderPre(); }
+function renderPre(){ const me = meP(); if (!me) return; const tm = teamOf(me.slot), ph = state.phase;
+  const left = Math.max(0, Math.ceil(((ph==='pick' ? state.pickEnd : state.dropEnd) - (Date.now()+(isHost?0:clockOffset)))/1000));
+  $('preTop').innerHTML = (ph==='pick' ? 'ヒーロー選択' : '出撃地点の予約') + `　残り <span>${left}</span> 秒`;
+  const allies = state.players.filter(p=>teamOf(p.slot)===tm).sort((a,b)=>a.slot-b.slot);
+  if (ph==='pick') {
+    const key = 'pick|' + myHero + '|' + allies.map(p=>p.id+p.h1+p.lc).join(',');
+    if (key === preKey) return; preKey = key;
+    const h = HEROES[myHero];
+    $('preBody').innerHTML = `<div class="card"><div class="hsel" id="pickSel">${HIDS.map(k=>`<button data-h="${k}" class="${k===myHero?'on':''}"><b style="color:${HEROES[k].col}">${HEROES[k].name}</b>${HEROES[k].role}</button>`).join('')}</div>
+      <div id="heroInfo"><b>パッシブ「${h.p[0]}」</b> ${h.p[1]}<br><b>キュー「${h.q[0]}」</b> ${h.q[1]}<br><b>ウルト「${h.u[0]}」</b> ${h.u[1]}</div>
+      <div class="sub" style="margin:6px 0 0">第2〜第5候補：${myPrefs.slice(1).map(k=>HEROES[k].name).join('→')}</div>
+      <button id="lcBtn" class="${me.lc?'':'sec'}">${me.lc?'リーダーに立候補中（押すと取り消し）':'リーダーに立候補する'}</button>
+      <label>チーム${tm+1}（第1候補は味方にだけ見えます）</label><ul>${allies.map(p=>`<li><span style="color:${COLORS[p.slot]}">● ${esc(p.name)}</span>　${HEROES[p.h1]?HEROES[p.h1].name:'？'}${p.lc?'　<b style="color:#ffe28a">★立候補</b>':''}${p.id===myId?'（あなた）':''}</li>`).join('')}</ul>
+      <div class="sub">同じヒーローが重なったら、使う人はランダム。使えなかった人は第2候補から順に決まります</div></div>`;
+    $('pickSel').onclick = e => { const b = e.target.closest('button'); if (!b) return; myHero = b.dataset.h; sendHero(); };
+    $('lcBtn').onclick = () => { me.lc = !me.lc; if (isHost) broadcast(); else if (hostConn && hostConn.open) hostConn.send({ t:'lc', v:me.lc }); preKey = ''; };
+    if (mnu.foc && !document.body.contains(mnu.foc)) menuFocus(null);
+    return; }
+  // 出撃地点の予約
+  const L0 = leaderOf(tm), info = isLd(me) ? 'あなたはリーダーです。出撃の基準地点を選んでください（ほかのチームの近くは選べません）'
+    : !L0 || !L0.res ? `リーダー（${L0?esc(L0.name):'？'}）の基準地点を待っています` : 'リーダーの近く（白い円の中）に予約できます。予約しなければ自動で近くに出撃します';
+  const key = 'drop|' + info;
+  if (key !== preKey || !$('preCv')) { preKey = key;
+    $('preBody').innerHTML = `<div id="preMsg">${info}</div><canvas id="preCv"></canvas><div class="sub" style="text-align:center;margin:4px 0 0">${HEROES[me.hero]?'あなたのヒーロー：<b style="color:'+HEROES[me.hero].col+'">'+HEROES[me.hero].name+'</b>　':''}地図を押して予約${navigator.getGamepads && [...navigator.getGamepads()].some(g=>g)?'（コントローラー：左スティックで動かしてA）':''}</div><div id="preNote" class="sub" style="text-align:center;color:#ff9a8a;min-height:16px"></div>`;
+    const cv2 = $('preCv'); cv2.onpointerdown = e => { const S = cv2._S, rc = cv2.getBoundingClientRect(); preRes((e.clientX-rc.left)/S*MAP, (e.clientY-rc.top)/S*MAP); }; }
+  drawPreMap(me, tm); }
+// 予約を送る（自分の端末でも先に確かめて、だめなら理由を出す）
+function preRes(x, y){ const me = meP(); if (!me || state.phase!=='drop') return; const tm = teamOf(me.slot), L0 = leaderOf(tm);
+  let note = ''; if (isLd(me)) { if (!baseOK(tm, x, y)) note = 'そこは選べません（ほかのチームに近い・水や建物の上など）'; }
+  else if (!L0 || !L0.res) note = 'リーダーが基準地点を選ぶまで待ってください';
+  const el = $('preNote'); if (el) el.textContent = note; sfx('ui'); if (note) return;
+  if (isHost) hostRes(me, x, y); else if (hostConn && hostConn.open) hostConn.send({ t:'res', x:Math.round(x), y:Math.round(y) }); }
+function drawPreMap(me, tm){ const cv2 = $('preCv'); if (!cv2) return;
+  const S = Math.max(200, Math.min(innerWidth-24, innerHeight-140)), r0 = devicePixelRatio||1;
+  if (cv2._S !== S) { cv2._S = S; cv2.width = S*r0; cv2.height = S*r0; cv2.style.width = cv2.style.height = S+'px'; }
+  const g = cv2.getContext('2d'), k = S/MAP, blink = .55 + .45*Math.sin(performance.now()/180); g.setTransform(r0,0,0,r0,0,0);
+  g.imageSmoothingEnabled = true; g.drawImage(bigImg(), 0, 0, S, S);
+  g.textAlign='center'; g.font=`bold ${Math.max(10, S/45|0)}px sans-serif`;
+  for (const a of W.areas) { const cx = (a.r[0]+a.r[2]/2)*k, cy = (a.r[1]+a.r[3]/2)*k; g.lineWidth=3; g.strokeStyle='rgba(0,0,0,.6)'; g.strokeText(a.name, cx, cy); g.fillStyle='rgba(255,255,255,.85)'; g.fillText(a.name, cx, cy); }
+  // 基準地点：ほかのチームのまわりは選べない範囲（赤）、自分のチームは味方の範囲（白）
+  for (const q of state.players) if (isLd(q) && q.res) { const mine = teamOf(q.slot)===tm;
+    g.beginPath(); g.arc(q.res.x*k, q.res.y*k, Math.max(4, (mine ? SPAWN_ALLY_R : SPAWN_ENEMY_MIN)*k), 0, Math.PI*2);
+    if (mine) { g.strokeStyle='#fff'; g.lineWidth=2; g.stroke(); } else { g.fillStyle='rgba(255,70,70,.25)'; g.fill(); } }
+  // 予約した地点（点滅する円）。全員に見える
+  for (const q of state.players) if (q.res) { const mine = teamOf(q.slot)===tm;
+    g.globalAlpha = blink; g.fillStyle = mine ? COLORS[q.slot] : '#ff5a5a'; g.beginPath(); g.arc(q.res.x*k, q.res.y*k, isLd(q) ? 7 : 5, 0, Math.PI*2); g.fill();
+    g.globalAlpha = 1; g.strokeStyle = q.id===myId ? '#ffe28a' : '#000'; g.lineWidth = q.id===myId ? 3 : 1; g.stroke(); }
+  if (preCur) { const x = preCur.x*k, y = preCur.y*k; g.strokeStyle='#ffe28a'; g.lineWidth=2; g.beginPath(); g.moveTo(x-10,y); g.lineTo(x+10,y); g.moveTo(x,y-10); g.lineTo(x,y+10); g.stroke(); } }
+// コントローラー：左スティックでカーソル、Aで予約（ヒーロー選択中は普段のメニュー操作）
+function prePad(){ requestAnimationFrame(prePad);
+  if (!preOn || state.phase!=='drop') return; const gp = (navigator.getGamepads ? [...navigator.getGamepads()] : []).find(g=>g); if (!gp) return;
+  const me = meP(); if (!me) return;
+  if (!preCur) { const L0 = leaderOf(teamOf(me.slot)), b = me.res || (L0 && L0.res); preCur = b ? { x:b.x, y:b.y } : { x:MAP/2, y:MAP/2 }; }
+  const lx = dz(gp.axes[0]||0), ly = dz(gp.axes[1]||0), sp = (isLd(me) ? MAP/2.5 : SPAWN_ALLY_R*1.5) / 60; // 1秒で地図の4割くらい（味方は小さく）
+  preCur.x = Math.max(0, Math.min(MAP, preCur.x + lx*sp)); preCur.y = Math.max(0, Math.min(MAP, preCur.y + ly*sp));
+  const A = gp.buttons[0] && gp.buttons[0].pressed; if (A && !prePrev[0]) preRes(preCur.x, preCur.y); prePrev = gp.buttons.map(b=>b.pressed); }
+requestAnimationFrame(prePad);
 $('btnHost').onclick = () => { msg('部屋を作成中…'); startHost(); };
 $('btnJoin').onclick = () => { msg('接続中…'); startJoin(); };
 $('btnStart').onclick = hostStartMatch;
