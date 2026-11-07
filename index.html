@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.0<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.1<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1193,8 +1193,8 @@ function botLoot(p, rad){
     return !!(ITEMS[c] && ITEMS[c].time) && bagN(p,c) < ITEMS[c].stack; };
   const meds = bagN(p,'m1')+bagN(p,'m2')+bagN(p,'s1')+bagN(p,'s2');
   let best = null, bd = rad || 1400;
-  if (emptyW || meds < 2 || need('as') || need('al')) for (const c of l.chests) if (!c.op) { const d = Math.hypot(c.x-p.x, c.y-p.y)*(0.85+((c.x*7+c.y*3+p.slot*13)%30)/100); if (d < bd) { bd = d; best = { x:c.x, y:c.y+16, o:c, k:'chest' }; } } // 好みに少しばらつき
-  for (const it of l.items) if (it.c!=='p' && it.own!==p.id && Math.abs(it.x-p.x) < bd && Math.abs(it.y-p.y) < bd && need(it.c)) { const d = Math.hypot(it.x-p.x, it.y-p.y)*0.8; if (d < bd) { bd = d; best = { x:it.x, y:it.y, o:it, k:'item' }; } }
+  if (emptyW || meds < 2 || need('as') || need('al')) for (const c of l.chests) if (!c.op && c!==p.skipO) { const d = Math.hypot(c.x-p.x, c.y-p.y)*(0.85+((c.x*7+c.y*3+p.slot*13)%30)/100); if (d < bd) { bd = d; best = { x:c.x, y:c.y+16, o:c, k:'chest' }; } } // 好みに少しばらつき
+  for (const it of l.items) if (it.c!=='p' && it.own!==p.id && it!==p.skipO && Math.abs(it.x-p.x) < bd && Math.abs(it.y-p.y) < bd && need(it.c)) { const d = Math.hypot(it.x-p.x, it.y-p.y)*0.8; if (d < bd) { bd = d; best = { x:it.x, y:it.y, o:it, k:'item' }; } }
   return best; }
 // 難易度（試合開始時にBOTごとにランダム。試合中は変えない）
 // react＝反応時間(秒)、aim＝照準誤差(度)、dodge＝回避判断の成功率、cover＝遮蔽物を使う度合い、abil＝キュー/ウルトを使う度合い（仮）
@@ -1223,6 +1223,13 @@ function coverSpot(p, from, rad){ let best = null, bs = 1e9;
   for (let i=0;i<12;i++) { const a = Math.random()*Math.PI*2, r = 30+Math.random()*rad, x = p.x+Math.cos(a)*r, y = p.y+Math.sin(a)*r;
     if (!clearAt(x,y) || losClear(from, {x,y})) continue; const s = r - Math.hypot(x-from.x, y-from.y)*0.3; if (s < bs) { bs = s; best = { x, y }; } }
   return best; }
+// 壁よけ：進む先が壁なら、左右に少しずつ角度を変えて通れる向きを探す（同じ側を続けて選ぶ）
+const blockedDir = (p, x, y) => { const d = R+12, cx = p.x+x*d, cy = p.y+y*d, k = R*0.8;
+  return cx<R || cy<R || cx>MAP-R || cy>MAP-R || inObs(cx,cy) || inObs(cx-y*k, cy+x*k) || inObs(cx+y*k, cy-x*k); };
+function botSteer(p, mx, my){ if (!blockedDir(p, mx, my)) return [mx, my]; const s = p.side || 1;
+  for (const deg of [25,50,75,100,130,160]) for (const k of [s,-s]) { const a = deg*Math.PI/180*k, c = Math.cos(a), si = Math.sin(a), x = mx*c-my*si, y = mx*si+my*c;
+    if (!blockedDir(p, x, y)) { p.side = k; return [x, y]; } }
+  return [mx, my]; }
 // キュー・ウルトを使うか（ヒーローごと）
 function botAbil(p, tgt, mates, D, now){ const h = p.hero, eff = p.hp+p.sh, d = tgt ? Math.hypot(tgt.x-p.x, tgt.y-p.y) : 1e9, w = wOf(p);
   let q = false, u = false;
@@ -1293,7 +1300,7 @@ function botThink(p, dt){
     if (!tgt && p.alrt && !humanMate && !p.zoneRun) p.bwp = { x:p.alrt.x, y:p.alrt.y }; // 警戒：音のした方へ
     // 5. 補充：武器がない・弾や回復が少ないときは、チェストや物を取りに行く（付いていく相手から離れすぎない）
     if (!tgt && !p.zoneRun && !p.down) { const lt = botLoot(p, P.loot);
-      if (lt && (!fol || Math.hypot(lt.x-fol.x, lt.y-fol.y) < (humanMate ? 500 : 450))) { p.bwp = { x:lt.x, y:lt.y };
+      p.lootO = null; if (lt && (!fol || Math.hypot(lt.x-fol.x, lt.y-fol.y) < (humanMate ? 500 : 450))) { p.bwp = { x:lt.x, y:lt.y }; p.lootO = lt.o;
         if (lt.k==='chest' && Math.hypot(lt.o.x-p.x, lt.o.y-p.y) < PICK_R) openChest(lt.o); } }
     // 回復：戦っていないとき（撤退して敵が見えなくなったときも）
     if (!tgt && !p.heal && !p.down && (p.sh < 60 || p.hp < 70)) startHeal(p, autoHeal(p));
@@ -1305,6 +1312,8 @@ function botThink(p, dt){
   const run = p.zoneRun && p.zwp && !(rev && rd < REVIVE_RANGE); // 蘇生の手が届く距離なら、そのまま蘇生する
   const cov = p.cov && now < p.cov.until ? p.cov : null;
   let goal = run ? p.zwp : cov ? cov : rev ? rev : p.bwp;
+  if (p.detour && (now > p.detour.until || Math.hypot(p.detour.x-p.x, p.detour.y-p.y) < 20)) p.detour = null;
+  if (p.detour && !(rev && rd < REVIVE_RANGE)) goal = p.detour; // 引っかかったときの回り道
   let mx=goal.x-p.x, my=goal.y-p.y, m=Math.hypot(mx,my);
   if (m < (!run && !cov && rev ? REVIVE_RANGE*0.6 : 20)) { mx=0; my=0; if (run) p.zwp = null; } else { mx/=m; my/=m; }
   let ax=p.ax, ay=p.ay, fire=false, act=false, pn=false, doQ=false, doU=false;
@@ -1331,6 +1340,12 @@ function botThink(p, dt){
     if (p.bQ && (p.hero==='raven' || p.hero==='medi')) { doQ = true; p.bQ = false; } // 戦っていないときの技（探知・回復）
     if (p.bU && p.hero==='medi') { doU = true; p.bU = false; } }
   if (act && p.bU && (p.hero==='aegis' || p.hero==='medi')) { doU = true; p.bU = false; } // 蘇生中：フォートレス・エリアリカバリー
+  if (mx||my) { const m3 = Math.hypot(mx,my), r = botSteer(p, mx/m3, my/m3); mx = r[0]*m3; my = r[1]*m3; } // 壁に向かって進まない
+  // 引っかかり検知（すべての移動）：1.2秒でほとんど進んでいなければ回り道。3回続いたら目標を変える
+  if ((mx||my) && !p.down && !act) { p._sk = (p._sk||0) + dt; if (p._sk >= 1.2) { const mv = Math.hypot(p.x-(p._kx??-1e9), p.y-(p._ky??0));
+      if (mv < 25) { p.stuckN = (p.stuckN||0) + 1; p.side = -(p.side||1); p.detour = Object.assign(freeSpot(p.x, p.y, 220), { until:now+1500 });
+        if (p.stuckN >= 3) { p.stuckN = 0; p.bwp = null; p.zwp = null; p.alrt = null; p.cov = null; if (p.lootO) p.skipO = p.lootO; } }
+      else p.stuckN = 0; p._sk = 0; p._kx = p.x; p._ky = p.y; } }
   if (!fire && !pn && (mx||my)) { const a=Math.hypot(mx,my); ax=mx/a; ay=my/a; } // 撃っていないときは移動方向を向く
   if (p.down) { fire=false; act=false; pn=false; doQ=false; doU=false; }
   return { mx, my, ax, ay, fire, act, doSw, doRl, doQ, doU, pn, dgc:p.bdgc };
