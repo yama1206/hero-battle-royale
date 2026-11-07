@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.3<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
+<div id="safe"></div><div id="lobby"><div id="ver">ver 0.10.4<button class="sec" onclick="location.replace(location.pathname+'?v='+Date.now())">更新</button></div><div class="card">
   <h1>ヒーローバトルロイヤル</h1><div class="sub">試作 段階9：出撃前の流れ</div>
   <div id="entry">
     <label>名前</label><input id="name" maxlength="10" placeholder="なまえ">
@@ -1459,7 +1459,13 @@ function enterGame(){ lastEv=0; fxs.length=0; closeBox(); mapOpen=false; closeSe
   if (!looping) { looping=true; lastT=performance.now(); requestAnimationFrame(frame); } }
 
 let netAcc = 0, seenBul = new Set();
-function frame(t){
+// エラーが出てもゲームを止めない（画面左上にエラー内容を出す。りょうさんに伝えてもらう用）
+function showErr(e){ let d = document.getElementById('errBox'); if (!d) { d = document.createElement('div'); d.id = 'errBox';
+    d.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;max-width:90vw;background:#300c;color:#fbb;font:12px monospace;padding:6px 8px;border:1px solid #f66;border-radius:6px;white-space:pre-wrap;pointer-events:none'; document.body.appendChild(d); }
+  const st = String(e && e.stack || e).split('\n').slice(0,3).join('\n'); d.textContent = 'エラー（ver表示と一緒にレムへ）\n' + st; d.style.display = 'block';
+  clearTimeout(showErr.t); showErr.t = setTimeout(()=>{ d.style.display = 'none'; }, 15000); }
+function frame(t){ requestAnimationFrame(frame); try { frameBody(t); } catch(e) { showErr(e); console.error(e); } }
+function frameBody(t){
   const dt = Math.max(0, Math.min(0.05, (t-lastT)/1000)); lastT = t; // 最初のフレームは時刻がずれてマイナスになることがある
   const inGame = state.phase==='match' || state.phase==='end', me = inGame ? localStep(dt) : null;
   if (isHost) { hostTick(dt); if (state.ev) takeEvents(state.ev); netAcc += dt; if (netAcc >= 0.05) { netAcc=0; broadcast(); } }
@@ -1468,7 +1474,6 @@ function frame(t){
     for (const b of state.bullets) { b.x+=b.vx*dt; b.y+=b.vy*dt; }
     for (const p of state.players) { const k=Math.min(1,dt*12); p.dx+=(p.x-p.dx)*k; p.dy+=(p.y-p.dy)*k; } }
   if (inGame) draw(me);
-  requestAnimationFrame(frame);
 }
 // ===== 斜め見下ろしの描画 =====
 // ---- 地面：マップを小さな板（チャンク）に分けて、画面に入った分だけ描いて取っておく ----
